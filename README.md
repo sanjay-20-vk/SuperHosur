@@ -35,3 +35,5 @@ Copy `.env.example` to `.env.local` and provide the Supabase project URL and pub
 ## Database
 
 Phase 2B migrations live under `supabase/migrations/`. See [supabase/README.md](supabase/README.md) for table responsibilities, RLS strategy, and the safe workflow for linking and applying migrations to the existing Supabase project.
+
+<!-- Test github  -->
