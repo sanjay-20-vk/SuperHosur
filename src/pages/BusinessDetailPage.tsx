@@ -48,33 +48,37 @@ export function BusinessDetailPage() {
 
   useEffect(() => {
     async function loadBusiness() {
-      if (!businessId) {
+      if (!businessId || !businessId.trim()) {
         setError('Business not found.')
         setLoading(false)
         return
       }
 
       try {
+        setLoading(true)
+        setError(null)
+
+        // 1. Resolve the primary business record and static taxonomy/session first
+        const [session, data, categories, cities] = await Promise.all([
+          getCurrentSession(),
+          getBusinessById(businessId),
+          getCategories(),
+          getCities(),
+        ])
+
+        // 2. Query child data strictly using the resolved business.id UUID (never by slug)
         const [
-          session,
-          data,
-          categories,
-          cities,
           serviceRows,
           productRows,
           photoRows,
           reviewRows,
           videoRows,
         ] = await Promise.all([
-          getCurrentSession(),
-          getBusinessById(businessId),
-          getCategories(),
-          getCities(),
-          getBusinessServices(businessId),
-          getBusinessProducts(businessId),
-          getApprovedBusinessPhotos(businessId),
-          getBusinessReviews(businessId),
-          getApprovedBusinessVideos(businessId),
+          getBusinessServices(data.id),
+          getBusinessProducts(data.id),
+          getApprovedBusinessPhotos(data.id),
+          getBusinessReviews(data.id),
+          getApprovedBusinessVideos(data.id),
         ])
 
         setBusiness(data)
@@ -93,7 +97,16 @@ export function BusinessDetailPage() {
           setIsOwner(data.owner_id === session.user.id)
         }
       } catch (loadError) {
-        if (loadError instanceof Error && loadError.message.includes('JSON object requested, multiple (or no) rows returned')) {
+        if (
+          (loadError instanceof Error &&
+            (loadError.message.includes('JSON object requested, multiple (or no) rows returned') ||
+              loadError.message.includes('invalid input syntax for type uuid'))) ||
+          (typeof loadError === 'object' &&
+            loadError !== null &&
+            'code' in loadError &&
+            ((loadError as { code: string }).code === 'PGRST116' ||
+              (loadError as { code: string }).code === '22P02'))
+        ) {
           setError('This business does not exist or is not currently available.')
         } else {
           const message =
@@ -110,7 +123,7 @@ export function BusinessDetailPage() {
 
   async function handleReviewSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
-    if (!businessId || submittingReview) return
+    if (!business || submittingReview) return
 
     setReviewError(null)
     setReviewSuccess(null)
@@ -140,7 +153,7 @@ export function BusinessDetailPage() {
 
     try {
       const created = await submitBusinessReview({
-        business_id: businessId,
+        business_id: business.id,
         rating: newRating,
         comment: newComment.trim(),
       })

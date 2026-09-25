@@ -3,7 +3,7 @@ import { useAuth } from '../hooks/useAuth'
 import { NotificationBell } from './NotificationBell'
 
 export function Header() {
-  const { session } = useAuth()
+  const { session, isAdmin } = useAuth()
   const hasSession = Boolean(session)
 
   return (
@@ -36,6 +36,11 @@ export function Header() {
             <Link to="/profile" className="nav-link">
               Profile
             </Link>
+            {isAdmin && (
+              <Link to="/admin" className="nav-link admin-nav-link" aria-label="Admin Portal">
+                Admin Portal
+              </Link>
+            )}
           </>
         )}
       </nav>

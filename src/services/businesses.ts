@@ -288,20 +288,33 @@ export async function getAdminBusinesses(): Promise<BusinessRecord[]> {
   return (data ?? []) as BusinessRecord[]
 }
 
-export async function getBusinessById(businessId: string): Promise<BusinessRecord> {
-  const supabase = getSupabaseClient()
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-  const { data, error } = await supabase
-    .from('businesses')
-    .select('*')
-    .eq('id', businessId)
-    .single()
+export function isUuid(value: string): boolean {
+  return UUID_REGEX.test(value.trim())
+}
+
+export async function getBusinessById(idOrSlug: string): Promise<BusinessRecord> {
+  const trimmed = idOrSlug ? idOrSlug.trim() : ''
+  if (!trimmed) {
+    throw new Error('Business identifier is required.')
+  }
+
+  const supabase = getSupabaseClient()
+  const isId = isUuid(trimmed)
+
+  const query = supabase.from('businesses').select('*')
+  const { data, error } = await (isId ? query.eq('id', trimmed) : query.eq('slug', trimmed)).single()
 
   if (error) {
     throw error
   }
 
   return data as BusinessRecord
+}
+
+export async function getBusinessBySlug(slug: string): Promise<BusinessRecord> {
+  return getBusinessById(slug)
 }
 
 export async function getCategoriesForBusinessForm(): Promise<{ id: string; name: string }[]> {

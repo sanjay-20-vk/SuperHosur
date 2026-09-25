@@ -156,6 +156,14 @@ const routes: RouteConfig[] = [
     ),
   },
   {
+    path: '/owner/dashboard',
+    element: (
+      <ProtectedRoute>
+        <OwnerDashboardPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: '/owner/onboarding',
     element: (
       <ProtectedRoute>

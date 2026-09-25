@@ -42,7 +42,7 @@ type ProfileFieldErrors = {
 
 export function ProfilePage() {
   const navigate = useNavigate()
-  const { session, profile: authProfile, loading, refreshProfile, signOut: authSignOut } = useAuth()
+  const { session, profile: authProfile, loading, refreshProfile, signOut: authSignOut, isAdmin } = useAuth()
   const userEmail = session?.user.email ?? null
 
   const [profile, setProfile] = useState<UserProfile | null>(authProfile)
@@ -198,6 +198,15 @@ export function ProfilePage() {
           </div>
 
           <div className="owner-actions">
+            {isAdmin && (
+              <Link
+                to="/admin"
+                className="primary-button inline-button profile-admin-button"
+                aria-label="Open Admin Portal"
+              >
+                Admin Portal &rarr;
+              </Link>
+            )}
             <button
               type="button"
               className="nav-link danger-button"
@@ -230,6 +239,28 @@ export function ProfilePage() {
           >
             ✓ {successMessage}
           </div>
+        )}
+
+        {/* Administrator Portal Access Card (Admin Only) */}
+        {isAdmin && (
+          <article className="business-card profile-card-section profile-admin-card" aria-label="Administrator Portal Access">
+            <div className="section-header" style={{ marginBottom: '14px', flexWrap: 'wrap', gap: '12px' }}>
+              <div>
+                <p className="eyebrow" style={{ color: '#4338ca' }}>Administration</p>
+                <h3 style={{ margin: 0, color: '#173f3a' }}>Administrator Portal</h3>
+                <p style={{ margin: '4px 0 0', fontSize: '0.88rem', color: '#64748b' }}>
+                  You have administrative privileges to moderate businesses, customer requirements, real estate properties, user accounts, and system taxonomy.
+                </p>
+              </div>
+              <Link
+                to="/admin"
+                className="primary-button inline-button profile-admin-button"
+                aria-label="Navigate to Admin Portal"
+              >
+                Open Admin Portal &rarr;
+              </Link>
+            </div>
+          </article>
         )}
 
         {/* 1. Profile Identity Card */}
