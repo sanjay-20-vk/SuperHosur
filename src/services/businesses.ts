@@ -39,6 +39,7 @@ export type BusinessRecord = {
   rating: number
   review_count: number
   active: boolean
+  rejection_reason?: string | null
   created_at: string
   updated_at: string
 }
@@ -64,6 +65,7 @@ export type BusinessUpdateInput = Partial<BusinessCreateInput>
 export type BusinessVisibilityUpdate = {
   active?: boolean
   verified?: boolean
+  rejection_reason?: string | null
 }
 
 export function toBusinessSlug(value: string): string {
@@ -511,6 +513,22 @@ export async function updateBusinessVisibility(
   }
 
   return data as BusinessRecord
+}
+
+export async function rejectBusiness(
+  businessId: string,
+  rejectionReason: string,
+): Promise<BusinessRecord> {
+  const trimmedReason = rejectionReason.trim()
+  if (!trimmedReason) {
+    throw new Error('A rejection reason is required to reject a business.')
+  }
+
+  return updateBusinessVisibility(businessId, {
+    active: false,
+    verified: false,
+    rejection_reason: trimmedReason,
+  })
 }
 
 export async function deleteBusiness(businessId: string): Promise<void> {

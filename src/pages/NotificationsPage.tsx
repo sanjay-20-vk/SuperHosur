@@ -10,6 +10,7 @@ import {
   markAllNotificationsAsRead,
   markNotificationAsRead,
   subscribeToUserNotifications,
+  type BusinessModerationNotificationData,
   type NotificationRecord,
   type NotificationType,
 } from '../services/notifications'
@@ -30,7 +31,22 @@ function formatRelativeTime(dateString: string): string {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
 }
 
-function getNotificationTypeMeta(type: NotificationType): { icon: string; label: string; badgeClass: string } {
+function getNotificationTypeMeta(
+  type: NotificationType,
+  data?: BusinessModerationNotificationData,
+): { icon: string; label: string; badgeClass: string } {
+  if (type === 'system' && data?.action) {
+    if (data.action === 'approved') {
+      return { icon: '🎉', label: 'Listing Approved', badgeClass: 'notif-badge-accepted' }
+    }
+    if (data.action === 'republished') {
+      return { icon: '🚀', label: 'Listing Live', badgeClass: 'notif-badge-accepted' }
+    }
+    if (data.action === 'rejected') {
+      return { icon: '⚠️', label: 'Listing Rejected', badgeClass: 'notif-badge-rejected' }
+    }
+  }
+
   switch (type) {
     case 'new_quote':
       return { icon: '💰', label: 'Quotation', badgeClass: 'notif-badge-quote' }
@@ -442,8 +458,11 @@ export function NotificationsPage() {
             ) : (
               <ul className="notif-feed-list" aria-label="Notification list">
                 {displayedNotifications.map((item) => {
-                  const meta = getNotificationTypeMeta(item.type)
+                  const modData = item.data as BusinessModerationNotificationData
+                  const meta = getNotificationTypeMeta(item.type, modData)
                   const isUnread = !item.is_read
+                  const isRejection = modData.action === 'rejected'
+                  const isApproval = modData.action === 'approved' || modData.action === 'republished'
 
                   return (
                     <li
@@ -492,10 +511,23 @@ export function NotificationsPage() {
                         <h2 className="notif-card-title">{item.title}</h2>
                         <p className="notif-card-message">{item.message}</p>
 
+                        {isRejection && Boolean(modData.rejection_reason) && (
+                          <div className="notif-card-rejection-callout" role="note">
+                            <span className="notif-card-rejection-label">Reason for rejection:</span>
+                            <span className="notif-card-rejection-reason">
+                              {String(modData.rejection_reason)}
+                            </span>
+                          </div>
+                        )}
+
                         {item.link && (
                           <div className="notif-card-link-preview">
                             <span className="notif-link-text">
-                              Open related item &rarr;
+                              {isRejection
+                                ? 'Open Owner Dashboard to resolve \u2192'
+                                : isApproval
+                                  ? 'View live listing \u2192'
+                                  : 'Open related item \u2192'}
                             </span>
                           </div>
                         )}

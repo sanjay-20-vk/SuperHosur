@@ -21,6 +21,17 @@ export type NotificationRecord = {
   updated_at: string
 }
 
+export type BusinessModerationAction = 'approved' | 'republished' | 'rejected'
+
+export interface BusinessModerationNotificationData {
+  business_id?: string
+  business_name?: string
+  business_slug?: string
+  action?: BusinessModerationAction
+  rejection_reason?: string
+}
+
+
 export async function getMyNotifications(limit = 30): Promise<NotificationRecord[]> {
   const supabase = getSupabaseClient()
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession()

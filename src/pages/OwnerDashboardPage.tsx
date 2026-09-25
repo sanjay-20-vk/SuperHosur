@@ -19,6 +19,15 @@ import {
   type VendorLeadRecord,
 } from '../services/requirements'
 
+type OwnerBusinessStatus = 'public' | 'pending' | 'rejected' | 'unpublished'
+
+function getOwnerBusinessStatus(business: BusinessRecord): OwnerBusinessStatus {
+  if (business.active && business.verified) return 'public'
+  if (!business.verified && Boolean(business.rejection_reason)) return 'rejected'
+  if (business.active && !business.verified) return 'pending'
+  return 'unpublished'
+}
+
 export function OwnerDashboardPage() {
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState<'leads' | 'businesses' | 'properties'>('leads')
@@ -332,7 +341,11 @@ export function OwnerDashboardPage() {
               </div>
               <span className="owner-metric-value">{businesses.length}</span>
               <span className="owner-metric-subtext">
-                Local store &amp; industrial profiles
+                {businesses.some((b) => !b.verified && Boolean(b.rejection_reason))
+                  ? `${businesses.filter((b) => !b.verified && Boolean(b.rejection_reason)).length} action required (rejected)`
+                  : businesses.some((b) => b.active && !b.verified)
+                  ? `${businesses.filter((b) => b.active && !b.verified).length} awaiting review`
+                  : 'Local store & industrial profiles'}
               </span>
             </div>
 
@@ -915,86 +928,182 @@ export function OwnerDashboardPage() {
               ) : (
                 <div className="table-responsive">
                   <div className="owner-list" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    {businesses.map((business) => (
-                      <article
-                        key={business.id}
-                        className="owner-business-card owner-dash-item-card"
-                        aria-labelledby={`biz-name-${business.id}`}
-                      >
-                        <div className="owner-dash-item-main">
-                          <p className="owner-card-label">Business Listing</p>
-                          <h3 id={`biz-name-${business.id}`} className="owner-item-title">
-                            {business.name}
-                          </h3>
+                    {businesses.map((business) => {
+                      const status = getOwnerBusinessStatus(business)
+                      const isPublic = status === 'public'
+                      const isPending = status === 'pending'
+                      const isRejected = status === 'rejected'
+                      const isUnpublished = status === 'unpublished'
 
-                          <div className="owner-meta-row">
-                            {business.address && (
-                              <span className="location-pill">{business.address}</span>
-                            )}
-                            {business.availability_status && (
-                              <span className="business-tag" style={{ textTransform: 'capitalize' }}>
-                                ● {business.availability_status}
+                      return (
+                        <article
+                          key={business.id}
+                          className={`owner-business-card owner-dash-item-card owner-business-card--${status}`}
+                          aria-labelledby={`biz-name-${business.id}`}
+                        >
+                          <div className="owner-dash-item-main">
+                            <div className="owner-card-top-row">
+                              <p className="owner-card-label">Business Listing</p>
+                              <span className={`owner-status-badge owner-status-badge--${status}`}>
+                                <span className={`owner-status-dot owner-status-dot--${status}`} aria-hidden="true" />
+                                {isPublic && '✓ Verified & Public'}
+                                {isPending && '⏳ Awaiting Verification'}
+                                {isRejected && '✕ Action Required: Rejected'}
+                                {isUnpublished && '🔒 Unpublished'}
                               </span>
-                            )}
-                            <span
-                              className={
-                                business.active && business.verified
-                                  ? 'status-badge status-accepted'
-                                  : business.active
-                                  ? 'status-badge status-quoted'
-                                  : 'status-badge status-cancelled'
-                              }
-                            >
-                              {business.active && business.verified
-                                ? '✓ Verified & Public'
-                                : business.active
-                                ? '⏳ Awaiting verification'
-                                : '🔒 Unpublished'}
-                            </span>
-                          </div>
-                        </div>
+                            </div>
 
-                        <div className="owner-business-actions">
-                          <Link
-                            to={`/owner/businesses/${business.id}/edit`}
-                            className="nav-link"
-                            aria-label={`Edit ${business.name}`}
-                          >
-                            ✏️ Edit
-                          </Link>
-                          <Link
-                            to={`/owner/businesses/${business.id}/edit#photos`}
-                            className="nav-link"
-                            aria-label={`Manage photos for ${business.name}`}
-                          >
-                            📷 Photos
-                          </Link>
-                          <Link
-                            to={`/businesses/${business.id}`}
-                            className="nav-link"
-                            aria-label={`View public profile of ${business.name}`}
-                          >
-                            👁️ View
-                          </Link>
-                          <Link
-                            to={`/owner/businesses/${business.id}/offerings`}
-                            className="nav-link"
-                            aria-label={`Manage services and products for ${business.name}`}
-                          >
-                            📦 Services &amp; products
-                          </Link>
-                          <button
-                            type="button"
-                            className="nav-link danger-button"
-                            onClick={() => handleDeleteBusiness(business.id)}
-                            disabled={actionLoadingId === business.id}
-                            aria-label={`Delete ${business.name}`}
-                          >
-                            {actionLoadingId === business.id ? 'Deleting…' : 'Delete'}
-                          </button>
-                        </div>
-                      </article>
-                    ))}
+                            <h3 id={`biz-name-${business.id}`} className="owner-item-title">
+                              {business.name}
+                            </h3>
+
+                            <div className="owner-meta-row">
+                              {business.address && (
+                                <span className="location-pill">📍 {business.address}</span>
+                              )}
+                              {business.availability_status && (
+                                <span className="business-tag" style={{ textTransform: 'capitalize' }}>
+                                  ● {business.availability_status}
+                                </span>
+                              )}
+                              {business.phone && (
+                                <span className="business-tag">📞 {business.phone}</span>
+                              )}
+                              <span className="business-tag">
+                                📅 Submitted{' '}
+                                {new Date(business.created_at).toLocaleDateString('en-IN', {
+                                  day: 'numeric',
+                                  month: 'short',
+                                  year: 'numeric',
+                                })}
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* REJECTED: Display Saved Rejection Reason & Professional Guidance */}
+                          {isRejected && (
+                            <div className="owner-status-banner owner-status-banner--rejected" role="alert">
+                              <div className="owner-status-banner-header">
+                                <span className="owner-status-banner-icon" aria-hidden="true">⚠️</span>
+                                <div className="owner-status-banner-header-text">
+                                  <h4 className="owner-status-banner-title">Listing Revision Required</h4>
+                                  <p className="owner-status-banner-subtitle">
+                                    An administrator reviewed your business and requested the following changes before approval:
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="owner-rejection-reason-box">
+                                <p className="owner-rejection-reason-quote">"{business.rejection_reason}"</p>
+                              </div>
+                              <div className="owner-status-banner-actions">
+                                <p className="owner-status-banner-instruction">
+                                  💡 Update your listing details or upload proper photos to address this feedback. Once saved, your listing will be re-submitted for admin review.
+                                </p>
+                                <Link
+                                  to={`/owner/businesses/${business.id}/edit`}
+                                  className="owner-resolve-btn"
+                                  aria-label={`Edit ${business.name} to address feedback`}
+                                >
+                                  ✏️ Edit Listing to Fix
+                                </Link>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* PENDING: Helpful Guidance while awaiting verification */}
+                          {isPending && (
+                            <div className="owner-status-banner owner-status-banner--pending" role="note">
+                              <div className="owner-status-banner-header">
+                                <span className="owner-status-banner-icon" aria-hidden="true">⏳</span>
+                                <div className="owner-status-banner-header-text">
+                                  <h4 className="owner-status-banner-title">Awaiting Admin Verification</h4>
+                                  <p className="owner-status-banner-subtitle">
+                                    Your listing was submitted and is currently in the verification queue.
+                                  </p>
+                                </div>
+                              </div>
+                              <p className="owner-status-banner-instruction">
+                                🛡️ To maintain high quality across SuperHosur, our moderation team verifies new business profiles. You can add photos or manage products while waiting. Once approved, your listing will automatically go live.
+                              </p>
+                            </div>
+                          )}
+
+                          {/* UNPUBLISHED: Guidance for inactive listings */}
+                          {isUnpublished && (
+                            <div className="owner-status-banner owner-status-banner--unpublished" role="note">
+                              <div className="owner-status-banner-header">
+                                <span className="owner-status-banner-icon" aria-hidden="true">🔒</span>
+                                <div className="owner-status-banner-header-text">
+                                  <h4 className="owner-status-banner-title">Listing Hidden (Unpublished)</h4>
+                                  <p className="owner-status-banner-subtitle">
+                                    This listing is currently hidden from public search, category directories, and map views.
+                                  </p>
+                                </div>
+                              </div>
+                              <p className="owner-status-banner-instruction">
+                                Click <strong>Edit</strong> to review your business information and reactivate public visibility.
+                              </p>
+                            </div>
+                          )}
+
+                          {/* VERIFIED & PUBLIC: Live confirmation */}
+                          {isPublic && (
+                            <div className="owner-status-banner owner-status-banner--public" role="note">
+                              <div className="owner-status-banner-header">
+                                <span className="owner-status-banner-icon" aria-hidden="true">🌟</span>
+                                <div className="owner-status-banner-header-text">
+                                  <h4 className="owner-status-banner-title">Live &amp; Public on SuperHosur</h4>
+                                  <p className="owner-status-banner-subtitle">
+                                    Your business is verified and active. Local customers in Hosur can discover your listing, view catalog offerings, and contact you directly.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Preserved Business Action Buttons (View fixed with slug) */}
+                          <div className="owner-business-actions">
+                            <Link
+                              to={`/owner/businesses/${business.id}/edit`}
+                              className="owner-action-btn owner-action-btn--primary"
+                              aria-label={`Edit ${business.name}`}
+                            >
+                              ✏️ Edit
+                            </Link>
+                            <Link
+                              to={`/owner/businesses/${business.id}/edit#photos`}
+                              className="owner-action-btn"
+                              aria-label={`Manage photos for ${business.name}`}
+                            >
+                              📷 Photos
+                            </Link>
+                            <Link
+                              to={`/businesses/${business.slug}`}
+                              className="owner-action-btn"
+                              aria-label={`View public profile of ${business.name}`}
+                            >
+                              👁️ View
+                            </Link>
+                            <Link
+                              to={`/owner/businesses/${business.id}/offerings`}
+                              className="owner-action-btn"
+                              aria-label={`Manage services and products for ${business.name}`}
+                            >
+                              📦 Services &amp; products
+                            </Link>
+                            <button
+                              type="button"
+                              className="owner-action-btn owner-action-btn--danger"
+                              onClick={() => handleDeleteBusiness(business.id)}
+                              disabled={actionLoadingId === business.id}
+                              aria-label={`Delete ${business.name}`}
+                            >
+                              {actionLoadingId === business.id ? 'Deleting…' : 'Delete'}
+                            </button>
+                          </div>
+                        </article>
+                      )
+                    })}
                   </div>
                 </div>
               )}

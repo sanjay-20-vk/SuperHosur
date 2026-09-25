@@ -3,7 +3,9 @@ import { Link, useLocation, useNavigate } from 'react-router-dom'
 import {
   getAdminBusinesses,
   updateBusinessVisibility,
+  rejectBusiness,
   type BusinessRecord,
+  type BusinessVisibilityUpdate,
 } from '../services/businesses'
 import {
   getAdminReviewPhotos,
@@ -331,13 +333,12 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
     }
   }
 
-  // Business / Media Moderation Actions
   async function updateVisibility(
     business: BusinessRecord,
-    input: { active: boolean; verified: boolean },
-    confirmation: string,
+    input: BusinessVisibilityUpdate,
+    confirmation?: string,
   ) {
-    if (!window.confirm(confirmation)) return
+    if (confirmation && !window.confirm(confirmation)) return
 
     try {
       setActionLoadingId(business.id)
@@ -346,6 +347,23 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
       await refreshBusinesses()
     } catch (updateError) {
       setError(getErrorMessage(updateError))
+    } finally {
+      setActionLoadingId(null)
+    }
+  }
+
+  async function handleRejectBusiness(
+    business: BusinessRecord,
+    rejectionReason: string,
+  ) {
+    try {
+      setActionLoadingId(business.id)
+      setError(null)
+      await rejectBusiness(business.id, rejectionReason)
+      await refreshBusinesses()
+    } catch (updateError) {
+      setError(getErrorMessage(updateError))
+      throw updateError
     } finally {
       setActionLoadingId(null)
     }
@@ -481,6 +499,7 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
               error={error}
               actionLoadingId={actionLoadingId}
               onUpdateVisibility={updateVisibility}
+              onRejectBusiness={handleRejectBusiness}
               onUpdatePhotoStatus={updatePhotoStatus}
               onUpdateVideoStatus={updateVideoStatus}
             />
