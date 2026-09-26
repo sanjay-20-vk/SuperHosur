@@ -357,8 +357,9 @@ export function CreatePropertyPage() {
         await updateProperty(propertyId, {
           ...input,
           active,
+          rejection_reason: null,
         })
-        setSuccessMessage('Property updated successfully!')
+        setSuccessMessage('Property updated successfully! It will be reviewed by moderators.')
       } else {
         const created = await createProperty(input, session.user.id)
         setSuccessMessage('Property created! You can now add photos below.')

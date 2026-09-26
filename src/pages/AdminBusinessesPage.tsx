@@ -35,12 +35,13 @@ import {
 import {
   getAdminProperties,
   getAdminReviewPropertyPhotos,
-  updatePropertyVerification,
-  updatePropertyActive,
+  updatePropertyModeration,
+  rejectProperty,
   updatePropertyPhotoModeration,
   getPropertyErrorMessage,
   type PropertySummary,
   type AdminPropertyPhoto,
+  type PropertyModerationUpdate,
 } from '../services/properties'
 import {
   getAdminRequirements,
@@ -106,7 +107,7 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
   const [propertiesLoading, setPropertiesLoading] = useState(true)
   const [propertiesError, setPropertiesError] = useState<string | null>(null)
   const [propertyActionId, setPropertyActionId] = useState<string | null>(null)
-  const [propertyFilter, setPropertyFilter] = useState<'all' | 'pending' | 'verified' | 'inactive'>('pending')
+  const [propertyFilter, setPropertyFilter] = useState<'all' | 'pending' | 'verified' | 'rejected' | 'inactive'>('pending')
 
   // Taxonomy (Categories & Subcategories) State
   const [categories, setCategories] = useState<CategoryRecord[]>([])
@@ -289,26 +290,38 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
     }
   }
 
-  // Property Moderation Actions
+  // Property Moderation Actions (Atomic single-update operations)
   async function updatePropertyStatus(
     prop: PropertySummary,
-    input: { active?: boolean; verified?: boolean },
-    confirmMessage: string,
+    input: PropertyModerationUpdate,
+    confirmMessage?: string,
   ) {
-    if (!window.confirm(confirmMessage)) return
+    if (confirmMessage && !window.confirm(confirmMessage)) return
 
     try {
       setPropertyActionId(prop.id)
       setPropertiesError(null)
-      if (input.verified !== undefined && input.verified !== prop.verified) {
-        await updatePropertyVerification(prop.id, input.verified)
-      }
-      if (input.active !== undefined && input.active !== prop.active) {
-        await updatePropertyActive(prop.id, input.active)
-      }
+      await updatePropertyModeration(prop.id, input)
       await refreshProperties()
     } catch (err) {
       setPropertiesError(getPropertyErrorMessage(err, 'Unable to update property.'))
+    } finally {
+      setPropertyActionId(null)
+    }
+  }
+
+  async function handleRejectProperty(
+    prop: PropertySummary,
+    rejectionReason: string,
+  ) {
+    try {
+      setPropertyActionId(prop.id)
+      setPropertiesError(null)
+      await rejectProperty(prop.id, rejectionReason)
+      await refreshProperties()
+    } catch (err) {
+      setPropertiesError(getPropertyErrorMessage(err, 'Unable to reject property listing.'))
+      throw err
     } finally {
       setPropertyActionId(null)
     }
@@ -579,6 +592,7 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
             filter={propertyFilter}
             onFilterChange={setPropertyFilter}
             onUpdateStatus={updatePropertyStatus}
+            onRejectProperty={handleRejectProperty}
             onUpdatePhotoStatus={updatePropPhotoStatus}
           />
         </div>

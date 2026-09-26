@@ -42,6 +42,7 @@ export type PropertyRecord = {
   longitude: number | null
   verified: boolean
   active: boolean
+  rejection_reason?: string | null
   created_at: string
   updated_at: string
   cities?: { name: string } | null
@@ -89,6 +90,13 @@ export type CreatePropertyInput = {
 
 export type UpdatePropertyInput = Partial<CreatePropertyInput> & {
   active?: boolean
+  rejection_reason?: string | null
+}
+
+export type PropertyModerationUpdate = {
+  verified: boolean
+  active: boolean
+  rejection_reason?: string | null
 }
 
 export type PropertyFilterOptions = {
@@ -577,6 +585,42 @@ export async function getAdminProperties(): Promise<PropertySummary[]> {
 
   const records = (data ?? []) as PropertyRecord[]
   return attachApprovedPropertyCoverPhotos(records)
+}
+
+export async function updatePropertyModeration(
+  propertyId: string,
+  input: PropertyModerationUpdate,
+): Promise<PropertyRecord> {
+  const supabase = getSupabaseClient()
+
+  const { data, error } = await supabase
+    .from('properties')
+    .update(input)
+    .eq('id', propertyId)
+    .select('*, cities(name)')
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return data as PropertyRecord
+}
+
+export async function rejectProperty(
+  propertyId: string,
+  rejectionReason: string,
+): Promise<PropertyRecord> {
+  const trimmedReason = rejectionReason ? rejectionReason.trim() : ''
+  if (!trimmedReason) {
+    throw new Error('A rejection reason is required to reject a property listing.')
+  }
+
+  return updatePropertyModeration(propertyId, {
+    active: false,
+    verified: false,
+    rejection_reason: trimmedReason,
+  })
 }
 
 export async function updatePropertyVerification(propertyId: string, verified: boolean): Promise<PropertyRecord> {

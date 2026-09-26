@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { getCurrentSession, signOut } from '../services/auth'
 import {
   deleteBusiness,
@@ -28,9 +28,31 @@ function getOwnerBusinessStatus(business: BusinessRecord): OwnerBusinessStatus {
   return 'unpublished'
 }
 
+type OwnerPropertyStatus = 'public' | 'pending' | 'rejected' | 'unpublished'
+
+function getOwnerPropertyStatus(property: PropertySummary): OwnerPropertyStatus {
+  if (property.active && property.verified) return 'public'
+  if (!property.verified && Boolean(property.rejection_reason)) return 'rejected'
+  if (property.active && !property.verified) return 'pending'
+  return 'unpublished'
+}
+
 export function OwnerDashboardPage() {
+  const [searchParams] = useSearchParams()
+  const tabParam = searchParams.get('tab')
+  const [selectedTab, setSelectedTab] = useState<'leads' | 'businesses' | 'properties' | null>(null)
+  const [lastTabParam, setLastTabParam] = useState(tabParam)
+
+  if (tabParam !== lastTabParam) {
+    setLastTabParam(tabParam)
+    setSelectedTab(null)
+  }
+
+  const activeTab: 'leads' | 'businesses' | 'properties' =
+    selectedTab ?? (tabParam === 'properties' ? 'properties' : tabParam === 'businesses' ? 'businesses' : 'leads')
+  const setActiveTab = setSelectedTab
+
   const [loading, setLoading] = useState(true)
-  const [activeTab, setActiveTab] = useState<'leads' | 'businesses' | 'properties'>('leads')
   const [businesses, setBusinesses] = useState<BusinessRecord[]>([])
   const [properties, setProperties] = useState<PropertySummary[]>([])
   const [leads, setLeads] = useState<VendorLeadRecord[]>([])
@@ -356,7 +378,11 @@ export function OwnerDashboardPage() {
               </div>
               <span className="owner-metric-value">{properties.length}</span>
               <span className="owner-metric-subtext">
-                Real estate &amp; commercial listings
+                {properties.some((p) => !p.verified && Boolean(p.rejection_reason))
+                  ? `${properties.filter((p) => !p.verified && Boolean(p.rejection_reason)).length} action required (rejected)`
+                  : properties.some((p) => p.active && !p.verified)
+                  ? `${properties.filter((p) => p.active && !p.verified).length} awaiting review`
+                  : 'Real estate & commercial listings'}
               </span>
             </div>
 
@@ -1163,12 +1189,11 @@ export function OwnerDashboardPage() {
                 <div className="table-responsive">
                   <div className="owner-list" style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     {properties.map((property) => {
-                      const statusLabel =
-                        property.active && property.verified
-                          ? '✓ Verified & Public'
-                          : property.active
-                          ? '⏳ Awaiting verification'
-                          : '🔒 Unpublished'
+                      const status = getOwnerPropertyStatus(property)
+                      const isRejected = status === 'rejected'
+                      const isPending = status === 'pending'
+                      const isUnpublished = status === 'unpublished'
+                      const isPublic = status === 'public'
 
                       const priceDisplay =
                         property.listing_type === 'rent'
@@ -1180,7 +1205,9 @@ export function OwnerDashboardPage() {
                       return (
                         <article
                           key={property.id}
-                          className="owner-business-card owner-dash-item-card"
+                          className={`owner-business-card owner-dash-item-card ${
+                            isRejected ? 'owner-dash-item-card--rejected' : ''
+                          }`}
                           aria-labelledby={`prop-title-${property.id}`}
                         >
                           <div className="owner-dash-item-main">
@@ -1203,45 +1230,134 @@ export function OwnerDashboardPage() {
                                 {priceDisplay}
                               </span>
                               <span>📍 {property.cities?.name || 'Hosur'}</span>
-                              <span
-                                className={
-                                  property.active && property.verified
-                                    ? 'status-badge status-accepted'
-                                    : property.active
-                                    ? 'status-badge status-quoted'
-                                    : 'status-badge status-cancelled'
-                                }
-                              >
-                                {statusLabel}
-                              </span>
+
+                              {/* Status Badges with Parity */}
+                              {isPublic && (
+                                <span className="status-badge status-accepted" aria-label="Status: Verified and Public">
+                                  ✓ Verified &amp; Public
+                                </span>
+                              )}
+                              {isPending && (
+                                <span className="status-badge status-quoted" aria-label="Status: Awaiting Verification">
+                                  ⏳ Awaiting Verification
+                                </span>
+                              )}
+                              {isRejected && (
+                                <span className="status-badge status-cancelled owner-status-badge--rejected" aria-label="Status: Action Required (Rejected)">
+                                  ⚠️ Action Required: Rejected
+                                </span>
+                              )}
+                              {isUnpublished && (
+                                <span className="status-badge" aria-label="Status: Unpublished">
+                                  🔒 Unpublished
+                                </span>
+                              )}
                             </div>
                           </div>
 
+                          {/* REJECTED: Display Saved Rejection Reason & Guidance */}
+                          {isRejected && (
+                            <div className="owner-status-banner owner-status-banner--rejected" role="alert">
+                              <div className="owner-status-banner-header">
+                                <span className="owner-status-banner-icon" aria-hidden="true">⚠️</span>
+                                <div className="owner-status-banner-header-text">
+                                  <h4 className="owner-status-banner-title">Action Required: Listing Revision Required</h4>
+                                  <p className="owner-status-banner-subtitle">
+                                    An administrator reviewed your property listing and requested the following changes before approval:
+                                  </p>
+                                </div>
+                              </div>
+                              {property.rejection_reason && (
+                                <div className="owner-rejection-reason-box">
+                                  <p className="owner-rejection-reason-quote">"{property.rejection_reason}"</p>
+                                </div>
+                              )}
+                              <div className="owner-status-banner-actions">
+                                <p className="owner-status-banner-instruction">
+                                  💡 Update your property details or upload proper photos to address this feedback. Once saved, your listing will be re-submitted for admin review.
+                                </p>
+                                <Link
+                                  to={`/owner/properties/${property.id}/edit`}
+                                  className="owner-resolve-btn"
+                                  aria-label={`Edit ${property.title} to address feedback`}
+                                >
+                                  ✏️ Edit Listing to Fix
+                                </Link>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* PENDING: Helpful Guidance while awaiting verification */}
+                          {isPending && (
+                            <div className="owner-status-banner owner-status-banner--pending" role="note">
+                              <div className="owner-status-banner-header">
+                                <span className="owner-status-banner-icon" aria-hidden="true">⏳</span>
+                                <div className="owner-status-banner-header-text">
+                                  <h4 className="owner-status-banner-title">Awaiting Admin Verification</h4>
+                                  <p className="owner-status-banner-subtitle">
+                                    Your listing has been submitted and is currently being reviewed by our moderation team. It will appear publicly in Hosur once verified.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* UNPUBLISHED: Helpful Guidance */}
+                          {isUnpublished && (
+                            <div className="owner-status-banner owner-status-banner--unpublished" role="note">
+                              <div className="owner-status-banner-header">
+                                <span className="owner-status-banner-icon" aria-hidden="true">🔒</span>
+                                <div className="owner-status-banner-header-text">
+                                  <h4 className="owner-status-banner-title">Listing is Unpublished</h4>
+                                  <p className="owner-status-banner-subtitle">
+                                    This property listing is currently unpublished and hidden from public searches in Hosur. Use Edit to update or contact support to reactivate.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* PUBLIC: Live and Public Guidance */}
+                          {isPublic && (
+                            <div className="owner-status-banner owner-status-banner--public" role="note">
+                              <div className="owner-status-banner-header">
+                                <span className="owner-status-banner-icon" aria-hidden="true">🌟</span>
+                                <div className="owner-status-banner-header-text">
+                                  <h4 className="owner-status-banner-title">Live &amp; Public on SuperHosur</h4>
+                                  <p className="owner-status-banner-subtitle">
+                                    Your property listing is verified and active. Prospective buyers and tenants in Hosur can discover your listing and contact you directly.
+                                  </p>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Action Buttons */}
                           <div className="owner-business-actions">
                             <Link
                               to={`/owner/properties/${property.id}/edit`}
-                              className="nav-link"
+                              className={`owner-action-btn ${isRejected ? 'owner-action-btn--primary' : ''}`}
                               aria-label={`Edit ${property.title}`}
                             >
                               ✏️ Edit
                             </Link>
                             <Link
                               to={`/owner/properties/${property.id}/edit#property-photos`}
-                              className="nav-link"
+                              className="owner-action-btn"
                               aria-label={`Manage photos for ${property.title}`}
                             >
                               📷 Photos
                             </Link>
                             <Link
                               to={`/properties/${property.id}`}
-                              className="nav-link"
+                              className="owner-action-btn"
                               aria-label={`View public listing of ${property.title}`}
                             >
                               👁️ View
                             </Link>
                             <button
                               type="button"
-                              className="nav-link danger-button"
+                              className="owner-action-btn owner-action-btn--danger"
                               onClick={() => handleDeleteProperty(property.id)}
                               disabled={propertyActionLoadingId === property.id}
                               aria-label={`Delete listing ${property.title}`}

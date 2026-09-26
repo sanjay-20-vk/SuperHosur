@@ -21,15 +21,20 @@ export type NotificationRecord = {
   updated_at: string
 }
 
-export type BusinessModerationAction = 'approved' | 'republished' | 'rejected'
+export type ModerationAction = 'approved' | 'republished' | 'rejected'
+export type BusinessModerationAction = ModerationAction
 
-export interface BusinessModerationNotificationData {
+export interface ModerationNotificationData {
   business_id?: string
   business_name?: string
   business_slug?: string
-  action?: BusinessModerationAction
+  property_id?: string
+  property_title?: string
+  action?: ModerationAction
   rejection_reason?: string
 }
+
+export type BusinessModerationNotificationData = ModerationNotificationData
 
 
 export async function getMyNotifications(limit = 30): Promise<NotificationRecord[]> {

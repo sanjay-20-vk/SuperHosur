@@ -10,7 +10,7 @@ import {
   markAllNotificationsAsRead,
   markNotificationAsRead,
   subscribeToUserNotifications,
-  type BusinessModerationNotificationData,
+  type ModerationNotificationData,
   type NotificationRecord,
   type NotificationType,
 } from '../services/notifications'
@@ -33,7 +33,7 @@ function formatRelativeTime(dateString: string): string {
 
 function getNotificationTypeMeta(
   type: NotificationType,
-  data?: BusinessModerationNotificationData,
+  data?: ModerationNotificationData,
 ): { icon: string; label: string; badgeClass: string } {
   if (type === 'system' && data?.action) {
     if (data.action === 'approved') {
@@ -458,7 +458,7 @@ export function NotificationsPage() {
             ) : (
               <ul className="notif-feed-list" aria-label="Notification list">
                 {displayedNotifications.map((item) => {
-                  const modData = item.data as BusinessModerationNotificationData
+                  const modData = item.data as ModerationNotificationData
                   const meta = getNotificationTypeMeta(item.type, modData)
                   const isUnread = !item.is_read
                   const isRejection = modData.action === 'rejected'
