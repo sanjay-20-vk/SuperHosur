@@ -56,7 +56,7 @@ export function PropertyCard({ property }: PropertyCardProps) {
 
         <h3>{property.title}</h3>
 
-        <div className="property-specs" style={{ display: 'flex', gap: '12px', margin: '8px 0', fontSize: '0.9rem', color: 'rgba(23, 63, 58, 0.8)' }}>
+        <div className="property-specs" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px', margin: '8px 0', fontSize: '0.9rem', color: 'rgba(23, 63, 58, 0.8)' }}>
           {property.bedrooms !== null && (
             <span><strong>{property.bedrooms}</strong> BHK</span>
           )}

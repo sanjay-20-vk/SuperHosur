@@ -109,7 +109,7 @@ export function SavedListingsPage() {
     <>
       <Header />
 
-      <main className="owner-dash-shell" style={{ maxWidth: '1200px', margin: '0 auto', padding: '32px 20px' }}>
+      <main className="owner-dash-shell saved-listings-main">
         <header className="owner-dash-header" style={{ marginBottom: '28px' }}>
           <div>
             <div className="owner-status-badge-row">
@@ -283,7 +283,7 @@ export function SavedListingsPage() {
                     </Link>
                   </h3>
 
-                  <div className="property-specs" style={{ display: 'flex', gap: '12px', margin: '8px 0', fontSize: '0.9rem', color: 'rgba(23, 63, 58, 0.8)' }}>
+                  <div className="property-specs" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px 12px', margin: '8px 0', fontSize: '0.9rem', color: 'rgba(23, 63, 58, 0.8)' }}>
                     {p.bedrooms !== null && (
                       <span><strong>{p.bedrooms}</strong> BHK</span>
                     )}
