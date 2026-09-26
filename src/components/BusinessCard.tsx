@@ -1,15 +1,16 @@
 import { Link } from 'react-router-dom'
 import type { BusinessSummary } from '../services/businesses'
+import { SaveListingButton } from './SaveListingButton'
 
 type BusinessCardProps = {
-  business: BusinessSummary
+  business: BusinessSummary & { slug?: string }
 }
 
 export function BusinessCard({ business }: BusinessCardProps) {
   return (
-    <Link to={`/businesses/${business.id}`} className="business-card-link">
+    <Link to={`/businesses/${business.slug || business.id}`} className="business-card-link">
       <article className="business-card" aria-label={business.name}>
-        <div className="business-card__media" aria-hidden={!business.cover_photo_url}>
+        <div className="business-card__media">
           {business.cover_photo_url ? (
             <img
               src={business.cover_photo_url}
@@ -17,11 +18,16 @@ export function BusinessCard({ business }: BusinessCardProps) {
               loading="lazy"
             />
           ) : (
-            <div className="business-card__placeholder">
+            <div className="business-card__placeholder" aria-hidden="true">
               <span className="placeholder-icon" aria-hidden="true">🏪</span>
               <span>Local listing</span>
             </div>
           )}
+          <SaveListingButton
+            targetType="business"
+            targetId={business.id}
+            title={business.name}
+          />
         </div>
 
         <div className="business-card__top">

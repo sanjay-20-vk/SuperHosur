@@ -431,6 +431,13 @@ export function ProfilePage() {
 
           <div className="profile-quick-links-grid">
             <Link
+              to="/saved"
+              className="profile-quick-link-btn"
+              aria-label="Go to My Saved Listings"
+            >
+              ❤️ Saved Listings
+            </Link>
+            <Link
               to="/my-requirements"
               className="profile-quick-link-btn"
               aria-label="Go to My Requirements"

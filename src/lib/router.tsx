@@ -21,6 +21,7 @@ const PostRequirementPage = lazy(() => import('../pages/PostRequirementPage').th
 const MyRequirementsPage = lazy(() => import('../pages/MyRequirementsPage').then((m) => ({ default: m.MyRequirementsPage })))
 const ProfilePage = lazy(() => import('../pages/ProfilePage').then((m) => ({ default: m.ProfilePage })))
 const NotificationsPage = lazy(() => import('../pages/NotificationsPage').then((m) => ({ default: m.NotificationsPage })))
+const SavedListingsPage = lazy(() => import('../pages/SavedListingsPage').then((m) => ({ default: m.SavedListingsPage })))
 
 type RouteConfig = {
   path: string
@@ -244,6 +245,14 @@ const routes: RouteConfig[] = [
     element: (
       <ProtectedRoute>
         <NotificationsPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/saved',
+    element: (
+      <ProtectedRoute>
+        <SavedListingsPage />
       </ProtectedRoute>
     ),
   },

@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { Header } from '../components/Header'
 import { LoadingState } from '../components/LoadingState'
 import { HosurMap } from '../components/HosurMap'
+import { SaveListingButton } from '../components/SaveListingButton'
 import { getCurrentSession } from '../services/auth'
 import {
   getApprovedPropertyPhotos,
@@ -147,15 +148,24 @@ export function PropertyDetailPage() {
             <span>←</span> Back to properties
           </Link>
 
-          {isOwner && (
-            <Link
-              to={`/owner/properties/${property.id}/edit`}
-              className="secondary-button"
-              style={{ padding: '8px 16px', fontSize: '0.85rem' }}
-            >
-              ✏️ Edit property
-            </Link>
-          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <SaveListingButton
+              targetType="property"
+              targetId={property.id}
+              title={property.title}
+              variant="detail-action"
+            />
+
+            {isOwner && (
+              <Link
+                to={`/owner/properties/${property.id}/edit`}
+                className="secondary-button"
+                style={{ padding: '8px 16px', fontSize: '0.85rem' }}
+              >
+                ✏️ Edit property
+              </Link>
+            )}
+          </div>
         </div>
 
         {/* 1. Property Detail Hero (Identity, Type & Quick Status) */}

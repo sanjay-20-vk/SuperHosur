@@ -1,5 +1,6 @@
 import { Link } from 'react-router-dom'
 import type { PropertySummary } from '../services/properties'
+import { SaveListingButton } from './SaveListingButton'
 
 type PropertyCardProps = {
   property: PropertySummary
@@ -35,12 +36,17 @@ export function PropertyCard({ property }: PropertyCardProps) {
   return (
     <Link to={`/properties/${property.id}`} className="business-card-link">
       <article className="business-card" aria-label={property.title}>
-        <div className="business-card__media" aria-hidden={!property.cover_photo_url}>
+        <div className="business-card__media">
           {property.cover_photo_url ? (
             <img src={property.cover_photo_url} alt={property.title} />
           ) : (
-            <div className="business-card__placeholder">Property listing</div>
+            <div className="business-card__placeholder" aria-hidden="true">Property listing</div>
           )}
+          <SaveListingButton
+            targetType="property"
+            targetId={property.id}
+            title={property.title}
+          />
         </div>
 
         <div className="business-card__top">

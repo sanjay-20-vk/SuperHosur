@@ -1177,6 +1177,7 @@ select[aria-invalid="true"]:focus {
 }
 
 .business-card__media {
+  position: relative;
   margin-bottom: 16px;
 }
 
@@ -11810,4 +11811,151 @@ table.data-table {
   .contact-button-whatsapp:hover {
     transform: none;
   }
+}
+
+/* ==========================================================================
+   Phase 16 Step 4: Saved Listings / Favorites
+   ========================================================================== */
+.save-listing-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  border: none;
+  background: transparent;
+  user-select: none;
+}
+
+.save-listing-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Badge variant for listing cards (positioned floating in top-right of media) */
+.save-listing-btn--badge {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: #64748b;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12), 0 1px 3px rgba(0, 0, 0, 0.08);
+  z-index: 10;
+}
+
+.save-listing-btn--badge:hover {
+  transform: scale(1.1);
+  background: #ffffff;
+  color: #e11d48;
+}
+
+.save-listing-btn--badge:active {
+  transform: scale(0.92);
+}
+
+.save-listing-btn--badge.is-saved {
+  background: #ffffff;
+  color: #e11d48;
+}
+
+.save-listing-btn--badge.is-saved .save-heart-icon {
+  stroke: #e11d48;
+  transform: scale(1.05);
+}
+
+/* Detail action variant for business & property detail pages */
+.save-listing-btn--detail {
+  padding: 8px 16px;
+  border-radius: var(--radius-md, 10px);
+  font-size: 0.9rem;
+  font-weight: 600;
+  background: rgba(24, 59, 52, 0.06);
+  border: 1px solid rgba(24, 59, 52, 0.12);
+  color: var(--color-primary-dark, #173f3a);
+}
+
+.save-listing-btn--detail:hover {
+  background: rgba(225, 29, 72, 0.08);
+  border-color: rgba(225, 29, 72, 0.25);
+  color: #be123c;
+}
+
+.save-listing-btn--detail.is-saved {
+  background: #fff1f2;
+  border-color: #fecdd3;
+  color: #e11d48;
+}
+
+.save-heart-icon {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), fill 0.2s ease;
+}
+
+.save-listing-btn:hover .save-heart-icon {
+  transform: scale(1.15);
+}
+
+/* Saved Listings Page Styles */
+.saved-header-meta {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.saved-type-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.saved-type-badge.business {
+  background: rgba(23, 89, 77, 0.1);
+  color: #17614d;
+}
+
+.saved-type-badge.property {
+  background: rgba(79, 70, 229, 0.1);
+  color: #4f46e5;
+}
+
+.saved-card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(24, 59, 52, 0.08);
+}
+
+.saved-remove-btn {
+  background: none;
+  border: none;
+  color: #94a3b8;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.saved-remove-btn:hover {
+  background: #fee2e2;
+  color: #dc2626;
 }

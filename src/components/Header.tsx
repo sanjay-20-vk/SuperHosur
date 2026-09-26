@@ -30,6 +30,9 @@ export function Header() {
         </Link>
         {hasSession && (
           <>
+            <Link to="/saved" className="nav-link">
+              Saved
+            </Link>
             <Link to="/my-requirements" className="nav-link">
               My requirements
             </Link>

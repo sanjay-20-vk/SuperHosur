@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import { Header } from '../components/Header'
 import { LoadingState } from '../components/LoadingState'
 import { HosurMap } from '../components/HosurMap'
+import { SaveListingButton } from '../components/SaveListingButton'
 import { getCurrentSession } from '../services/auth'
 import { getBusinessById, type BusinessRecord } from '../services/businesses'
 import { getCategories, type CategorySummary } from '../services/categories'
@@ -264,6 +265,13 @@ export function BusinessDetailPage() {
             <Link to="/" className="business-back-link">
               <span>←</span> Back to marketplace
             </Link>
+
+            <SaveListingButton
+              targetType="business"
+              targetId={business.id}
+              title={business.name}
+              variant="detail-action"
+            />
 
             {isOwner && (
               <Link to={`/owner/businesses/${business.id}/edit`} className="business-owner-edit-btn">
