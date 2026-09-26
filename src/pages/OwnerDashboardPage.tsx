@@ -15,6 +15,7 @@ import {
   getVendorLeads,
   updateVendorLeadStatus,
   submitRequirementQuote,
+  withdrawQuote,
   type RequirementMatchStatus,
   type VendorLeadRecord,
 } from '../services/requirements'
@@ -68,6 +69,7 @@ export function OwnerDashboardPage() {
   const [quoteValidUntil, setQuoteValidUntil] = useState('')
   const [quoteNotes, setQuoteNotes] = useState('')
   const [submittingQuote, setSubmittingQuote] = useState(false)
+  const [withdrawingQuoteId, setWithdrawingQuoteId] = useState<string | null>(null)
   const [quoteError, setQuoteError] = useState<string | null>(null)
 
   async function refreshData() {
@@ -236,6 +238,31 @@ export function OwnerDashboardPage() {
       setQuoteError(err instanceof Error ? err.message : 'Unable to submit quotation.')
     } finally {
       setSubmittingQuote(false)
+    }
+  }
+
+  async function handleWithdrawQuote(lead: VendorLeadRecord) {
+    if (!lead.quote) return
+
+    if (
+      !window.confirm(
+        'Withdraw this quote? This action will remove it from consideration but keep the quote history.',
+      )
+    ) {
+      return
+    }
+
+    try {
+      setWithdrawingQuoteId(lead.quote.id)
+      setError(null)
+      const updatedQuote = await withdrawQuote(lead.quote.id)
+      setLeads((prev) =>
+        prev.map((l) => (l.id === lead.id ? { ...l, quote: updatedQuote } : l)),
+      )
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to withdraw quotation.')
+    } finally {
+      setWithdrawingQuoteId(null)
     }
   }
 
@@ -717,13 +744,22 @@ export function OwnerDashboardPage() {
                                           ? 'status-badge status-accepted'
                                           : lead.quote.status === 'rejected'
                                           ? 'status-badge status-cancelled'
+                                          : lead.quote.status === 'withdrawn'
+                                          ? 'status-badge status-cancelled'
                                           : 'status-badge status-quoted'
+                                      }
+                                      style={
+                                        lead.quote.status === 'withdrawn'
+                                          ? { backgroundColor: '#f1f5f9', color: '#64748b', borderColor: '#cbd5e1' }
+                                          : undefined
                                       }
                                     >
                                       {lead.quote.status === 'accepted'
                                         ? '✓ Quote Accepted by Customer'
                                         : lead.quote.status === 'rejected'
                                         ? 'Quote Declined'
+                                        : lead.quote.status === 'withdrawn'
+                                        ? '↩️ Quote Withdrawn'
                                         : 'Quote Submitted • Pending Customer Decision'}
                                     </span>
                                   </div>
@@ -734,17 +770,59 @@ export function OwnerDashboardPage() {
                                     </p>
                                   )}
 
-                                  {lead.quote.status === 'submitted' && (
-                                    <button
-                                      type="button"
-                                      className="text-action"
-                                      style={{ marginTop: '8px', fontSize: '0.85rem' }}
-                                      onClick={() => handleOpenQuoteModal(lead)}
-                                      aria-label="Edit submitted quotation"
-                                    >
-                                      ✏️ Edit Quotation
-                                    </button>
+                                  {lead.quote.status === 'withdrawn' && (
+                                    <p style={{ margin: '8px 0 4px', fontSize: '0.85rem', color: '#64748b', fontStyle: 'italic' }}>
+                                      This quotation has been withdrawn. It remains saved in your history and is no longer under consideration.
+                                    </p>
                                   )}
+
+                                  {lead.quote.status === 'submitted' && (
+                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
+                                      {req?.status !== 'closed' &&
+                                      req?.status !== 'completed' &&
+                                      req?.status !== 'cancelled' &&
+                                      req?.status !== 'expired' ? (
+                                        <button
+                                          type="button"
+                                          className="text-action"
+                                          style={{ fontSize: '0.85rem' }}
+                                          onClick={() => handleOpenQuoteModal(lead)}
+                                          aria-label="Edit submitted quotation"
+                                        >
+                                          ✏️ Edit Quotation
+                                        </button>
+                                      ) : (
+                                        <span style={{ fontSize: '0.82rem', color: '#b91c1c' }}>
+                                          ⚠️ Requirement is {req?.status}; editing quotation is locked.
+                                        </span>
+                                      )}
+
+                                      <button
+                                        type="button"
+                                        className="text-action"
+                                        style={{ fontSize: '0.85rem', color: '#b91c1c' }}
+                                        onClick={() => handleWithdrawQuote(lead)}
+                                        disabled={withdrawingQuoteId === lead.quote.id}
+                                        aria-label="Withdraw this quotation"
+                                      >
+                                        {withdrawingQuoteId === lead.quote.id ? 'Withdrawing…' : '↩️ Withdraw Quote'}
+                                      </button>
+                                    </div>
+                                  )}
+                                </div>
+                              ) : req?.status === 'closed' ||
+                                req?.status === 'completed' ||
+                                req?.status === 'cancelled' ||
+                                req?.status === 'expired' ? (
+                                <div className="owner-quote-empty-box">
+                                  <div>
+                                    <p style={{ margin: 0, fontWeight: 700, color: '#64748b', fontSize: '0.9rem' }}>
+                                      Requirement {req.status === 'closed' ? 'Closed' : req.status === 'cancelled' ? 'Cancelled' : 'Completed'}
+                                    </p>
+                                    <p style={{ margin: '2px 0 0', color: 'var(--color-text-muted)', fontSize: '0.85rem' }}>
+                                      This customer requirement is no longer accepting new quotations.
+                                    </p>
+                                  </div>
                                 </div>
                               ) : (
                                 <div className="owner-quote-empty-box">

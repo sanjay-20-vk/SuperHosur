@@ -1,5 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useAuth } from '../hooks/useAuth'
 import {
   getCategories,
   getSubcategories,
@@ -9,8 +10,11 @@ import {
 import { getCities, type CityOption } from '../services/cities'
 import {
   createRequirement,
+  getRequirementById,
   getRequirementErrorMessage,
+  updateRequirement,
   type RequirementCreateInput,
+  type RequirementUpdateInput,
 } from '../services/requirements'
 import {
   extractRequirementFromText,
@@ -29,9 +33,14 @@ type RequirementFieldErrors = {
 
 export function PostRequirementPage() {
   const navigate = useNavigate()
+  const { requirementId } = useParams<{ requirementId?: string }>()
+  const isEditMode = Boolean(requirementId)
+  const { user } = useAuth()
+
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [existingStatus, setExistingStatus] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<RequirementFieldErrors>({})
 
   const [cities, setCities] = useState<CityOption[]>([])
@@ -80,18 +89,56 @@ export function PostRequirementPage() {
         setCategories(catRows)
         setAllSubcategories(subRows)
 
-        if (cityRows.length > 0 && cityRows[0]) {
+        if (!isEditMode && cityRows.length > 0 && cityRows[0]) {
           setCityId(cityRows[0].id)
         }
+
+        if (isEditMode && requirementId) {
+          const req = await getRequirementById(requirementId)
+          if (!req) {
+            setError('Requirement not found.')
+            return
+          }
+
+          if (user && req.customer_id !== user.id) {
+            setError('Access denied: You can only edit your own requirements.')
+            return
+          }
+
+          setExistingStatus(req.status)
+          if (
+            req.status === 'closed' ||
+            req.status === 'completed' ||
+            req.status === 'cancelled' ||
+            req.status === 'expired'
+          ) {
+            setError(`This requirement is ${req.status} and cannot be edited.`)
+          }
+
+          setTitle(req.title)
+          setCityId(req.city_id)
+          setCategoryId(req.category_id || '')
+          if (req.category_id) {
+            const relatedSubs = subRows.filter((s) => s.category_id === req.category_id)
+            setSubcategories(relatedSubs)
+            setSubcategoryId(req.subcategory_id || '')
+          }
+          setDescription(req.description || '')
+          setBudgetMin(req.budget_min !== null && req.budget_min !== undefined ? String(req.budget_min) : '')
+          setBudgetMax(req.budget_max !== null && req.budget_max !== undefined ? String(req.budget_max) : '')
+          setRequiredDate(req.required_date || '')
+          setDuration(req.duration || '')
+          setAddress(req.address || '')
+        }
       } catch (err) {
-        setError(getRequirementErrorMessage(err, 'Unable to load categories and cities.'))
+        setError(getRequirementErrorMessage(err, 'Unable to load requirement details.'))
       } finally {
         setLoading(false)
       }
     }
 
-    loadFormData()
-  }, [])
+    void loadFormData()
+  }, [isEditMode, requirementId, user])
 
   useEffect(() => {
     async function loadSubcategoriesForCategory() {
@@ -113,8 +160,11 @@ export function PostRequirementPage() {
       }
     }
 
-    loadSubcategoriesForCategory()
-  }, [categoryId])
+    // Only run if not initial load or category explicitly changed
+    if (!isEditMode || subcategories.length === 0) {
+      void loadSubcategoriesForCategory()
+    }
+  }, [categoryId, isEditMode, subcategories.length])
 
   async function handleAiExtract() {
     if (aiExtracting) return
@@ -201,6 +251,17 @@ export function PostRequirementPage() {
     setError(null)
     setFieldErrors({})
 
+    const isClosedOrCancelled =
+      existingStatus === 'closed' ||
+      existingStatus === 'completed' ||
+      existingStatus === 'cancelled' ||
+      existingStatus === 'expired'
+
+    if (isEditMode && isClosedOrCancelled) {
+      setError(`This requirement is ${existingStatus} and cannot be modified.`)
+      return
+    }
+
     const errors: RequirementFieldErrors = {}
     const cleanTitle = title.trim()
 
@@ -272,21 +333,40 @@ export function PostRequirementPage() {
 
     try {
       setSubmitting(true)
-      const input: RequirementCreateInput = {
-        title: cleanTitle,
-        city_id: cityId,
-        category_id: categoryId || null,
-        subcategory_id: subcategoryId || null,
-        description: description.trim() || null,
-        budget_min: minNum,
-        budget_max: maxNum,
-        required_date: requiredDate || null,
-        duration: duration.trim() || null,
-        address: address.trim() || null,
-        ai_extracted_data: aiExtractedData ? { ...aiExtractedData } : null,
+
+      if (isEditMode && requirementId) {
+        const updateInput: RequirementUpdateInput = {
+          title: cleanTitle,
+          city_id: cityId,
+          category_id: categoryId || null,
+          subcategory_id: subcategoryId || null,
+          description: description.trim() || null,
+          budget_min: minNum,
+          budget_max: maxNum,
+          required_date: requiredDate || null,
+          duration: duration.trim() || null,
+          address: address.trim() || null,
+        }
+
+        await updateRequirement(requirementId, updateInput)
+      } else {
+        const createInput: RequirementCreateInput = {
+          title: cleanTitle,
+          city_id: cityId,
+          category_id: categoryId || null,
+          subcategory_id: subcategoryId || null,
+          description: description.trim() || null,
+          budget_min: minNum,
+          budget_max: maxNum,
+          required_date: requiredDate || null,
+          duration: duration.trim() || null,
+          address: address.trim() || null,
+          ai_extracted_data: aiExtractedData ? { ...aiExtractedData } : null,
+        }
+
+        await createRequirement(createInput)
       }
 
-      await createRequirement(input)
       navigate('/my-requirements', { replace: true })
     } catch (submitError) {
       setError(getRequirementErrorMessage(submitError))
@@ -303,14 +383,22 @@ export function PostRequirementPage() {
     )
   }
 
+  const isClosedOrCancelled =
+    existingStatus === 'closed' ||
+    existingStatus === 'completed' ||
+    existingStatus === 'cancelled' ||
+    existingStatus === 'expired'
+
   return (
     <section className="page-section">
       <div className="dashboard-header">
         <div>
-          <p className="eyebrow">Customer marketplace</p>
-          <h1>Post a requirement</h1>
+          <p className="eyebrow">{isEditMode ? 'Requirement lifecycle' : 'Customer marketplace'}</p>
+          <h1>{isEditMode ? 'Edit requirement' : 'Post a requirement'}</h1>
           <p className="page-intro">
-            Tell local businesses in Hosur what you need to receive quotes and connect with verified professionals.
+            {isEditMode
+              ? 'Update your requirement details below. Existing quotations and matched vendors will remain connected.'
+              : 'Tell local businesses in Hosur what you need to receive quotes and connect with verified professionals.'}
           </p>
         </div>
 
@@ -324,14 +412,39 @@ export function PostRequirementPage() {
         </div>
       </div>
 
-      {/* AI Assistant Card */}
-      <div className="ai-assistant-card" aria-label="AI Requirement Assistant">
-        <div className="ai-assistant-header">
-          <div className="ai-badge">✨ AI Requirement Assistant</div>
-          <span className="ai-subtext">
-            Describe what you need in natural English — we&apos;ll auto-fill the form for you
-          </span>
+      {/* In Edit Mode: Show Requirement Edit Status Banner; In Create Mode: Show AI Assistant */}
+      {isEditMode ? (
+        <div className="owner-status-banner owner-status-banner--public" role="note" style={{ marginBottom: '24px' }}>
+          <div className="owner-status-banner-header">
+            <span className="owner-status-banner-icon" aria-hidden="true">✏️</span>
+            <div className="owner-status-banner-header-text">
+              <h4 className="owner-status-banner-title">
+                Editing Requirement: {title || 'Untitled'}
+              </h4>
+              <p className="owner-status-banner-subtitle">
+                Status: <strong>{existingStatus ? existingStatus.toUpperCase() : 'ACTIVE'}</strong> • Only you (the creator) can modify these details.
+              </p>
+            </div>
+          </div>
+          {isClosedOrCancelled ? (
+            <p className="owner-status-banner-instruction" style={{ color: '#b91c1c' }}>
+              ⚠️ This requirement is marked as <strong>{existingStatus}</strong> and is locked from further edits.
+            </p>
+          ) : (
+            <p className="owner-status-banner-instruction">
+              You can update the scope, timeline, indicative budget, or category. Existing quotations received from Hosur businesses will remain preserved.
+            </p>
+          )}
         </div>
+      ) : (
+        /* AI Assistant Card */
+        <div className="ai-assistant-card" aria-label="AI Requirement Assistant">
+          <div className="ai-assistant-header">
+            <div className="ai-badge">✨ AI Requirement Assistant</div>
+            <span className="ai-subtext">
+              Describe what you need in natural English — we&apos;ll auto-fill the form for you
+            </span>
+          </div>
 
         <div className="ai-input-group">
           <textarea
@@ -454,6 +567,7 @@ export function PostRequirementPage() {
           </div>
         )}
       </div>
+      )}
 
       <form className="owner-form" onSubmit={handleSubmit} noValidate>
         {error && (
@@ -659,15 +773,21 @@ export function PostRequirementPage() {
         </div>
 
         <div className="form-actions">
-          <Link to="/" className="secondary-button inline-button">
+          <Link to="/my-requirements" className="secondary-button inline-button">
             Cancel
           </Link>
           <button
             type="submit"
             className="primary-button inline-button"
-            disabled={submitting}
+            disabled={submitting || isClosedOrCancelled}
           >
-            {submitting ? 'Submitting requirement…' : 'Submit requirement'}
+            {isEditMode
+              ? submitting
+                ? 'Saving changes…'
+                : 'Save Changes'
+              : submitting
+              ? 'Submitting requirement…'
+              : 'Submit requirement'}
           </button>
         </div>
       </form>

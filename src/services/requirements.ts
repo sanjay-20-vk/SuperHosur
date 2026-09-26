@@ -6,6 +6,7 @@ export type RequirementStatus =
   | 'quoted'
   | 'accepted'
   | 'completed'
+  | 'closed'
   | 'cancelled'
   | 'expired'
 
@@ -94,6 +95,19 @@ export type RequirementCreateInput = {
   duration?: string | null
   address?: string | null
   ai_extracted_data?: Record<string, unknown> | null
+}
+
+export type RequirementUpdateInput = {
+  city_id: string
+  category_id?: string | null
+  subcategory_id?: string | null
+  title: string
+  description?: string | null
+  budget_min?: number | null
+  budget_max?: number | null
+  required_date?: string | null
+  duration?: string | null
+  address?: string | null
 }
 
 export function getRequirementErrorMessage(error: unknown, fallback = 'Unable to process requirement.'): string {
@@ -316,8 +330,243 @@ export async function getMyRequirements(): Promise<RequirementRecord[]> {
   })
 }
 
+export async function getRequirementById(requirementId: string): Promise<RequirementRecord | null> {
+  const supabase = getSupabaseClient()
+
+  const { data, error } = await supabase
+    .from('requirements')
+    .select(`
+      *,
+      cities(name),
+      categories(name),
+      subcategories(name),
+      requirement_matches(
+        id,
+        match_score,
+        status,
+        created_at,
+        businesses(id, name, phone, whatsapp, verified)
+      ),
+      requirement_quotes(
+        id,
+        requirement_id,
+        business_id,
+        vendor_id,
+        quote_amount,
+        estimated_duration,
+        valid_until,
+        notes,
+        status,
+        created_at,
+        updated_at,
+        businesses(id, name, phone, whatsapp, verified)
+      )
+    `)
+    .eq('id', requirementId)
+    .maybeSingle()
+
+  if (error) {
+    throw error
+  }
+
+  if (!data) {
+    return null
+  }
+
+  const cityData = Array.isArray(data.cities) ? data.cities[0] : data.cities
+  const catData = Array.isArray(data.categories) ? data.categories[0] : data.categories
+  const subcatData = Array.isArray(data.subcategories) ? data.subcategories[0] : data.subcategories
+
+  const rawMatches = data.requirement_matches ?? []
+  const matches: RequirementMatchItem[] = rawMatches.map((m: {
+    id: string
+    match_score: number
+    status: RequirementMatchStatus
+    created_at: string
+    businesses?: MatchedBusinessSummary | MatchedBusinessSummary[] | null
+  }) => {
+    const bizData = Array.isArray(m.businesses) ? m.businesses[0] : m.businesses
+    return {
+      id: m.id,
+      match_score: m.match_score,
+      status: m.status,
+      created_at: m.created_at,
+      business: bizData ?? null,
+    }
+  })
+
+  const rawQuotes = data.requirement_quotes ?? []
+  const quotes: RequirementQuoteRecord[] = rawQuotes.map((q: {
+    id: string
+    requirement_id: string
+    business_id: string
+    vendor_id: string
+    quote_amount: number
+    estimated_duration: string | null
+    valid_until: string | null
+    notes: string | null
+    status: QuoteStatus
+    created_at: string
+    updated_at: string
+    businesses?: MatchedBusinessSummary | MatchedBusinessSummary[] | null
+  }) => {
+    const bizData = Array.isArray(q.businesses) ? q.businesses[0] : q.businesses
+    return {
+      id: q.id,
+      requirement_id: q.requirement_id,
+      business_id: q.business_id,
+      vendor_id: q.vendor_id,
+      quote_amount: Number(q.quote_amount),
+      estimated_duration: q.estimated_duration,
+      valid_until: q.valid_until,
+      notes: q.notes,
+      status: q.status,
+      created_at: q.created_at,
+      updated_at: q.updated_at,
+      business: bizData ?? null,
+    }
+  })
+
+  return {
+    id: data.id,
+    customer_id: data.customer_id,
+    city_id: data.city_id,
+    category_id: data.category_id,
+    subcategory_id: data.subcategory_id ?? null,
+    title: data.title,
+    description: data.description,
+    quantity: data.quantity,
+    budget_min: data.budget_min,
+    budget_max: data.budget_max,
+    required_date: data.required_date,
+    duration: data.duration,
+    address: data.address,
+    status: data.status,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+    city_name: cityData?.name ?? null,
+    category_name: catData?.name ?? null,
+    subcategory_name: subcatData?.name ?? null,
+    matches,
+    quotes,
+  }
+}
+
+export async function updateRequirement(
+  requirementId: string,
+  input: RequirementUpdateInput,
+): Promise<RequirementRecord> {
+  const supabase = getSupabaseClient()
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+  if (sessionError || !sessionData.session?.user.id) {
+    throw new Error('Please sign in to update your requirement.')
+  }
+
+  const userId = sessionData.session.user.id
+
+  const title = input.title.trim()
+  if (!title || title.length < 5) {
+    throw new Error('Requirement title must be at least 5 characters.')
+  }
+  if (title.length > 100) {
+    throw new Error('Requirement title cannot exceed 100 characters.')
+  }
+
+  if (!input.city_id) {
+    throw new Error('Please select a city.')
+  }
+
+  if (
+    input.budget_min !== null &&
+    input.budget_min !== undefined &&
+    input.budget_max !== null &&
+    input.budget_max !== undefined &&
+    input.budget_min > input.budget_max
+  ) {
+    throw new Error('Minimum budget cannot exceed maximum budget.')
+  }
+
+  // Verify ownership and lifecycle status before updating
+  const { data: existing, error: fetchError } = await supabase
+    .from('requirements')
+    .select('id, customer_id, status')
+    .eq('id', requirementId)
+    .single()
+
+  if (fetchError || !existing) {
+    throw new Error('Requirement not found.')
+  }
+
+  if (existing.customer_id !== userId) {
+    throw new Error('Access denied: You can only edit your own requirements.')
+  }
+
+  if (
+    existing.status === 'closed' ||
+    existing.status === 'completed' ||
+    existing.status === 'cancelled' ||
+    existing.status === 'expired'
+  ) {
+    throw new Error(`This requirement is ${existing.status} and can no longer be edited.`)
+  }
+
+  const payload = {
+    city_id: input.city_id,
+    category_id: input.category_id || null,
+    subcategory_id: input.subcategory_id || null,
+    title,
+    description: input.description?.trim() || null,
+    budget_min: input.budget_min ?? null,
+    budget_max: input.budget_max ?? null,
+    required_date: input.required_date || null,
+    duration: input.duration?.trim() || null,
+    address: input.address?.trim() || null,
+  }
+
+  const { data, error } = await supabase
+    .from('requirements')
+    .update(payload)
+    .eq('id', requirementId)
+    .eq('customer_id', userId)
+    .select('*')
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  // Refresh business matches if category or subcategory changed
+  matchRequirementForBusinesses(requirementId).catch(() => 0)
+
+  return data as RequirementRecord
+}
+
+export async function closeRequirement(requirementId: string): Promise<void> {
+  const supabase = getSupabaseClient()
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+  if (sessionError || !sessionData.session?.user.id) {
+    throw new Error('Please sign in to close your requirement.')
+  }
+
+  const { error } = await supabase
+    .from('requirements')
+    .update({ status: 'closed' })
+    .eq('id', requirementId)
+
+  if (error) {
+    throw error
+  }
+}
+
 export async function cancelRequirement(requirementId: string): Promise<void> {
   const supabase = getSupabaseClient()
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+  if (sessionError || !sessionData.session?.user.id) {
+    throw new Error('Please sign in to cancel your requirement.')
+  }
 
   const { error } = await supabase
     .from('requirements')
@@ -343,6 +592,38 @@ export async function submitRequirementQuote(input: RequirementQuoteInput): Prom
     throw new Error('Please enter a valid quotation amount greater than 0.')
   }
 
+  // Verify requirement is actively accepting quotes
+  const { data: req, error: reqErr } = await supabase
+    .from('requirements')
+    .select('id, status')
+    .eq('id', input.requirement_id)
+    .single()
+
+  if (reqErr || !req) {
+    throw new Error('Requirement not found.')
+  }
+
+  if (
+    req.status === 'closed' ||
+    req.status === 'completed' ||
+    req.status === 'cancelled' ||
+    req.status === 'expired'
+  ) {
+    throw new Error(`This requirement is ${req.status} and is no longer accepting quotations.`)
+  }
+
+  // Verify existing quote is not withdrawn
+  const { data: existingQuote } = await supabase
+    .from('requirement_quotes')
+    .select('id, status')
+    .eq('requirement_id', input.requirement_id)
+    .eq('business_id', input.business_id)
+    .maybeSingle()
+
+  if (existingQuote && existingQuote.status === 'withdrawn') {
+    throw new Error('This quotation was previously withdrawn and cannot be resubmitted. Please contact the customer if needed.')
+  }
+
   const payload = {
     requirement_id: input.requirement_id,
     business_id: input.business_id,
@@ -357,6 +638,64 @@ export async function submitRequirementQuote(input: RequirementQuoteInput): Prom
   const { data, error } = await supabase
     .from('requirement_quotes')
     .upsert(payload, { onConflict: 'requirement_id,business_id' })
+    .select(`
+      *,
+      businesses (id, name, phone, whatsapp, verified)
+    `)
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  const bizData = Array.isArray(data.businesses) ? data.businesses[0] : data.businesses
+  return {
+    id: data.id,
+    requirement_id: data.requirement_id,
+    business_id: data.business_id,
+    vendor_id: data.vendor_id,
+    quote_amount: Number(data.quote_amount),
+    estimated_duration: data.estimated_duration,
+    valid_until: data.valid_until,
+    notes: data.notes,
+    status: data.status as QuoteStatus,
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+    business: bizData ?? null,
+  }
+}
+
+export async function withdrawQuote(quoteId: string): Promise<RequirementQuoteRecord> {
+  const supabase = getSupabaseClient()
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+  if (sessionError || !sessionData.session?.user.id) {
+    throw new Error('Please sign in to withdraw your quotation.')
+  }
+
+  // Fetch existing quote to check eligibility
+  const { data: existingQuote, error: fetchError } = await supabase
+    .from('requirement_quotes')
+    .select('id, requirement_id, status, vendor_id, business_id')
+    .eq('id', quoteId)
+    .single()
+
+  if (fetchError || !existingQuote) {
+    throw new Error('Quotation not found.')
+  }
+
+  if (existingQuote.status === 'withdrawn') {
+    throw new Error('This quotation has already been withdrawn.')
+  }
+
+  if (existingQuote.status === 'accepted') {
+    throw new Error('This quotation has been accepted by the customer and cannot be withdrawn.')
+  }
+
+  const { data, error } = await supabase
+    .from('requirement_quotes')
+    .update({ status: 'withdrawn' })
+    .eq('id', quoteId)
     .select(`
       *,
       businesses (id, name, phone, whatsapp, verified)

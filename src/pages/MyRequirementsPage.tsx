@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import {
   acceptRequirementQuote,
   cancelRequirement,
+  closeRequirement,
   completeRequirement,
   getMyRequirements,
   getRequirementErrorMessage,
@@ -34,6 +35,8 @@ function getStatusBadgeClass(status: RequirementRecord['status']): string {
       return 'status-badge status-accepted'
     case 'completed':
       return 'status-badge status-completed'
+    case 'closed':
+      return 'status-badge status-closed'
     case 'cancelled':
     case 'expired':
       return 'status-badge status-cancelled'
@@ -54,6 +57,8 @@ function getStatusLabel(status: RequirementRecord['status']): string {
       return 'Quotation Accepted'
     case 'completed':
       return 'Fulfilled & Completed'
+    case 'closed':
+      return 'Closed'
     case 'cancelled':
       return 'Cancelled'
     case 'expired':
@@ -68,6 +73,7 @@ export function MyRequirementsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [cancellingId, setCancellingId] = useState<string | null>(null)
+  const [closingId, setClosingId] = useState<string | null>(null)
   const [acceptingQuoteId, setAcceptingQuoteId] = useState<string | null>(null)
   const [completingReqId, setCompletingReqId] = useState<string | null>(null)
 
@@ -108,6 +114,27 @@ export function MyRequirementsPage() {
       active = false
     }
   }, [])
+
+  async function handleClose(requirementId: string) {
+    if (
+      !window.confirm(
+        'Close this requirement? It will be marked as closed and will no longer accept new quotations from businesses.',
+      )
+    ) {
+      return
+    }
+
+    try {
+      setClosingId(requirementId)
+      setError(null)
+      await closeRequirement(requirementId)
+      await loadData()
+    } catch (err) {
+      setError(getRequirementErrorMessage(err, 'Unable to close requirement.'))
+    } finally {
+      setClosingId(null)
+    }
+  }
 
   async function handleCancel(requirementId: string) {
     if (!window.confirm('Are you sure you want to cancel this requirement?')) {
@@ -279,6 +306,8 @@ export function MyRequirementsPage() {
         <div className="table-responsive">
           <div className="owner-list" style={{ gap: '24px' }}>
             {requirements.map((req) => {
+              const canEdit = req.status === 'open' || req.status === 'matching' || req.status === 'quoted'
+              const canClose = req.status === 'open' || req.status === 'matching' || req.status === 'quoted'
               const canCancel = req.status === 'open' || req.status === 'matching' || req.status === 'quoted'
               const matches = req.matches ?? []
               const quotes = req.quotes ?? []
@@ -413,6 +442,32 @@ export function MyRequirementsPage() {
                     </div>
                   )}
 
+                  {req.status === 'closed' && (
+                    <div className="req-lifecycle-card" role="status" style={{ backgroundColor: '#f8fafc', borderColor: '#cbd5e1' }}>
+                      <div>
+                        <p className="req-lifecycle-title" style={{ color: '#475569' }}>
+                          🔒 Requirement Closed
+                        </p>
+                        <p className="req-lifecycle-desc">
+                          This requirement is closed and is no longer accepting new quotations.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {req.status === 'cancelled' && (
+                    <div className="req-lifecycle-card" role="status" style={{ backgroundColor: '#fef2f2', borderColor: '#fecaca' }}>
+                      <div>
+                        <p className="req-lifecycle-title" style={{ color: '#991b1b' }}>
+                          ✕ Requirement Cancelled
+                        </p>
+                        <p className="req-lifecycle-desc">
+                          This requirement was cancelled. Quotes and matching for this request are inactive.
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {/* Section 1: Received Vendor Quotations (Wrapped in .table-responsive) */}
                   <div className="req-sub-section">
                     <div className="req-sub-heading">
@@ -425,6 +480,8 @@ export function MyRequirementsPage() {
                       <p style={{ fontSize: '0.9rem', color: 'var(--color-text-muted)' }}>
                         {req.status === 'cancelled'
                           ? 'Requirement cancelled.'
+                          : req.status === 'closed'
+                          ? 'Requirement closed.'
                           : 'No formal quotes submitted yet. Matched vendors in Hosur will review your request and send pricing.'}
                       </p>
                     ) : (
@@ -433,16 +490,18 @@ export function MyRequirementsPage() {
                           {quotes.map((q) => {
                             const isThisAccepted = q.status === 'accepted'
                             const isRejected = q.status === 'rejected'
+                            const isWithdrawn = q.status === 'withdrawn'
                             const canAcceptThis =
                               q.status === 'submitted' &&
                               req.status !== 'accepted' &&
                               req.status !== 'completed' &&
+                              req.status !== 'closed' &&
                               req.status !== 'cancelled'
 
                             return (
                               <div
                                 key={q.id}
-                                className={`req-quote-item ${isThisAccepted ? 'is-accepted' : ''} ${isRejected ? 'is-rejected' : ''}`}
+                                className={`req-quote-item ${isThisAccepted ? 'is-accepted' : ''} ${isRejected ? 'is-rejected' : ''} ${isWithdrawn ? 'is-withdrawn' : ''}`}
                               >
                                 <div className="req-quote-top">
                                   <div className="req-quote-vendor">
@@ -466,13 +525,22 @@ export function MyRequirementsPage() {
                                           ? 'status-badge status-accepted'
                                           : isRejected
                                           ? 'status-badge status-cancelled'
+                                          : isWithdrawn
+                                          ? 'status-badge status-cancelled'
                                           : 'status-badge status-quoted'
+                                      }
+                                      style={
+                                        isWithdrawn
+                                          ? { backgroundColor: '#f1f5f9', color: '#64748b', borderColor: '#cbd5e1' }
+                                          : undefined
                                       }
                                     >
                                       {isThisAccepted
                                         ? '✓ Accepted Quote'
                                         : isRejected
                                         ? 'Declined'
+                                        : isWithdrawn
+                                        ? '↩️ Withdrawn'
                                         : 'Submitted Quote'}
                                     </span>
 
@@ -490,6 +558,12 @@ export function MyRequirementsPage() {
                                     )}
                                   </div>
                                 </div>
+
+                                {isWithdrawn && (
+                                  <p style={{ margin: '6px 0 0', fontSize: '0.82rem', color: '#64748b', fontStyle: 'italic' }}>
+                                    The vendor withdrew this quotation. It is no longer under consideration.
+                                  </p>
+                                )}
 
                                 {q.notes && (
                                   <p className="req-quote-notes">
@@ -626,17 +700,41 @@ export function MyRequirementsPage() {
                       })}
                     </span>
 
-                    {canCancel && (
-                      <button
-                        type="button"
-                        className="nav-link danger-button"
-                        onClick={() => handleCancel(req.id)}
-                        disabled={cancellingId === req.id}
-                        aria-label={`Cancel requirement ${req.title}`}
-                      >
-                        {cancellingId === req.id ? 'Cancelling…' : 'Cancel requirement'}
-                      </button>
-                    )}
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                      {canEdit && (
+                        <Link
+                          to={`/requirements/${req.id}/edit`}
+                          className="owner-action-btn owner-action-btn--primary"
+                          aria-label={`Edit requirement ${req.title}`}
+                        >
+                          ✏️ Edit
+                        </Link>
+                      )}
+
+                      {canClose && (
+                        <button
+                          type="button"
+                          className="owner-action-btn"
+                          onClick={() => handleClose(req.id)}
+                          disabled={closingId === req.id}
+                          aria-label={`Close requirement ${req.title}`}
+                        >
+                          {closingId === req.id ? 'Closing…' : '🔒 Close'}
+                        </button>
+                      )}
+
+                      {canCancel && (
+                        <button
+                          type="button"
+                          className="owner-action-btn owner-action-btn--danger"
+                          onClick={() => handleCancel(req.id)}
+                          disabled={cancellingId === req.id}
+                          aria-label={`Cancel requirement ${req.title}`}
+                        >
+                          {cancellingId === req.id ? 'Cancelling…' : 'Cancel'}
+                        </button>
+                      )}
+                    </div>
                   </footer>
                 </article>
               )

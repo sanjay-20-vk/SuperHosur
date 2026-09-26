@@ -4,6 +4,7 @@ export type NotificationType =
   | 'new_quote'
   | 'quote_accepted'
   | 'quote_rejected'
+  | 'quote_withdrawn'
   | 'requirement_status'
   | 'new_lead'
   | 'system'

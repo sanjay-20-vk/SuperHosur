@@ -216,6 +216,14 @@ const routes: RouteConfig[] = [
     ),
   },
   {
+    path: '/requirements/:requirementId/edit',
+    element: (
+      <ProtectedRoute>
+        <PostRequirementPage />
+      </ProtectedRoute>
+    ),
+  },
+  {
     path: '/my-requirements',
     element: (
       <ProtectedRoute>

@@ -54,6 +54,8 @@ function getNotificationTypeMeta(
       return { icon: '🎉', label: 'Quote Accepted', badgeClass: 'notif-badge-accepted' }
     case 'quote_rejected':
       return { icon: '📋', label: 'Quote Declined', badgeClass: 'notif-badge-rejected' }
+    case 'quote_withdrawn':
+      return { icon: '↩️', label: 'Quote Withdrawn', badgeClass: 'notif-badge-rejected' }
     case 'requirement_status':
       return { icon: '⚡', label: 'Requirement Update', badgeClass: 'notif-badge-status' }
     case 'new_lead':
