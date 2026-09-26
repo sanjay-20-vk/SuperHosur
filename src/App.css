@@ -2039,6 +2039,19 @@ select[aria-invalid="true"]:focus {
   text-decoration: underline;
 }
 
+@media (max-width: 640px) {
+  .notification-popover {
+    position: fixed;
+    top: 68px;
+    left: 12px;
+    right: 12px;
+    width: auto;
+    max-width: none;
+    max-height: calc(100dvh - 84px);
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2), 0 8px 16px rgba(0, 0, 0, 0.1);
+  }
+}
+
 /* ==========================================================================
    COMMUNICATION CENTER / NOTIFICATIONS PAGE (PHASE 9)
    ========================================================================== */

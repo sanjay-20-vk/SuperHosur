@@ -9,6 +9,7 @@ import {
   markAllNotificationsAsRead,
   markNotificationAsRead,
   subscribeToUserNotifications,
+  type ModerationNotificationData,
   type NotificationRecord,
 } from '../services/notifications'
 
@@ -28,7 +29,15 @@ function formatRelativeTime(dateString: string): string {
   return date.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
 }
 
-function getNotificationTypeIcon(type: NotificationRecord['type']) {
+function getNotificationTypeIcon(
+  type: NotificationRecord['type'],
+  data?: ModerationNotificationData,
+) {
+  if (type === 'system' && data?.action) {
+    if (data.action === 'approved') return '🎉'
+    if (data.action === 'republished') return '🚀'
+    if (data.action === 'rejected') return '⚠️'
+  }
   switch (type) {
     case 'new_quote':
       return '💰'
@@ -36,6 +45,8 @@ function getNotificationTypeIcon(type: NotificationRecord['type']) {
       return '🎉'
     case 'quote_rejected':
       return '📋'
+    case 'quote_withdrawn':
+      return '↩️'
     case 'requirement_status':
       return '⚡'
     case 'new_lead':
@@ -304,7 +315,7 @@ export function NotificationBell() {
                 >
                   <div className="notification-icon-wrapper">
                     <span className="notification-type-emoji">
-                      {getNotificationTypeIcon(item.type)}
+                      {getNotificationTypeIcon(item.type, item.data)}
                     </span>
                   </div>
 

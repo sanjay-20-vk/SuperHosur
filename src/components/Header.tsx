@@ -146,6 +146,10 @@ export function Header() {
             {hasSession && (
               <div className="mobile-nav-section">
                 <span className="mobile-nav-section-title">My Account</span>
+                <Link to="/notifications" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>
+                  <span className="mobile-nav-icon" aria-hidden="true">🔔</span>
+                  <span>Notifications</span>
+                </Link>
                 <Link to="/saved" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>
                   <span className="mobile-nav-icon" aria-hidden="true">❤️</span>
                   <span>Saved Listings &amp; Favorites</span>

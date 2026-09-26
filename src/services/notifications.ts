@@ -73,6 +73,42 @@ export async function getMyNotifications(limit = 30): Promise<NotificationRecord
   }))
 }
 
+export async function getUnreadNotifications(limit = 30): Promise<NotificationRecord[]> {
+  const supabase = getSupabaseClient()
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+  if (sessionError || !sessionData.session?.user.id) {
+    return []
+  }
+
+  const userId = sessionData.session.user.id
+
+  const { data, error } = await supabase
+    .from('notifications')
+    .select('*')
+    .eq('user_id', userId)
+    .eq('is_read', false)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+
+  if (error) {
+    throw error
+  }
+
+  return (data ?? []).map((n) => ({
+    id: n.id,
+    user_id: n.user_id,
+    type: n.type as NotificationType,
+    title: n.title,
+    message: n.message,
+    link: n.link,
+    data: (n.data as Record<string, unknown>) ?? {},
+    is_read: Boolean(n.is_read),
+    created_at: n.created_at,
+    updated_at: n.updated_at,
+  }))
+}
+
 export async function getUnreadNotificationCount(): Promise<number> {
   const supabase = getSupabaseClient()
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
@@ -98,10 +134,19 @@ export async function getUnreadNotificationCount(): Promise<number> {
 
 export async function markNotificationAsRead(notificationId: string): Promise<void> {
   const supabase = getSupabaseClient()
-  const { error } = await supabase
+  const { data: sessionData } = await supabase.auth.getSession()
+  const userId = sessionData.session?.user.id
+
+  let query = supabase
     .from('notifications')
     .update({ is_read: true })
     .eq('id', notificationId)
+
+  if (userId) {
+    query = query.eq('user_id', userId)
+  }
+
+  const { error } = await query
 
   if (error) {
     throw error
@@ -129,12 +174,72 @@ export async function markAllNotificationsAsRead(): Promise<void> {
   }
 }
 
+export interface CreateNotificationInput {
+  userId: string
+  type: NotificationType
+  title: string
+  message: string
+  link?: string | null
+  data?: Record<string, unknown>
+}
+
+export async function createNotification(
+  input: CreateNotificationInput,
+): Promise<NotificationRecord> {
+  const supabase = getSupabaseClient()
+  const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+  if (sessionError || !sessionData.session?.user.id) {
+    throw new Error('Authentication required to create notifications.')
+  }
+
+  const { data, error } = await supabase
+    .from('notifications')
+    .insert({
+      user_id: input.userId,
+      type: input.type,
+      title: input.title.trim(),
+      message: input.message.trim(),
+      link: input.link ?? null,
+      data: input.data ?? {},
+      is_read: false,
+    })
+    .select('*')
+    .single()
+
+  if (error) {
+    throw error
+  }
+
+  return {
+    id: data.id,
+    user_id: data.user_id,
+    type: data.type as NotificationType,
+    title: data.title,
+    message: data.message,
+    link: data.link,
+    data: (data.data as Record<string, unknown>) ?? {},
+    is_read: Boolean(data.is_read),
+    created_at: data.created_at,
+    updated_at: data.updated_at,
+  }
+}
+
 export async function deleteNotification(notificationId: string): Promise<void> {
   const supabase = getSupabaseClient()
-  const { error } = await supabase
+  const { data: sessionData } = await supabase.auth.getSession()
+  const userId = sessionData.session?.user.id
+
+  let query = supabase
     .from('notifications')
     .delete()
     .eq('id', notificationId)
+
+  if (userId) {
+    query = query.eq('user_id', userId)
+  }
+
+  const { error } = await query
 
   if (error) {
     throw error
