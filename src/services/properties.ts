@@ -99,6 +99,8 @@ export type PropertyModerationUpdate = {
   rejection_reason?: string | null
 }
 
+export type PropertySortOption = 'newest' | 'price_asc' | 'price_desc' | 'area_desc'
+
 export type PropertyFilterOptions = {
   search?: string
   listingType?: ListingType | 'all'
@@ -107,6 +109,9 @@ export type PropertyFilterOptions = {
   bedrooms?: number | 'all'
   minPrice?: number
   maxPrice?: number
+  sortBy?: PropertySortOption
+  limit?: number
+  offset?: number
 }
 
 function getPhotoExtension(file: File): string {
@@ -259,7 +264,7 @@ export async function getPublicProperties(filters: PropertyFilterOptions = {}): 
     query = query.eq('property_type', filters.propertyType)
   }
 
-  if (filters.cityId) {
+  if (filters.cityId && filters.cityId !== 'all') {
     query = query.eq('city_id', filters.cityId)
   }
 
@@ -272,12 +277,36 @@ export async function getPublicProperties(filters: PropertyFilterOptions = {}): 
     }
   }
 
+  if (typeof filters.minPrice === 'number' && !isNaN(filters.minPrice)) {
+    query = query.or(`price.gte.${filters.minPrice},rent.gte.${filters.minPrice}`)
+  }
+
+  if (typeof filters.maxPrice === 'number' && !isNaN(filters.maxPrice)) {
+    query = query.or(`price.lte.${filters.maxPrice},rent.lte.${filters.maxPrice}`)
+  }
+
   if (filters.search && filters.search.trim().length > 0) {
     const term = `%${filters.search.trim().replace(/[%_\\]/g, '\\$&')}%`
     query = query.or(`title.ilike."${term}",description.ilike."${term}",address.ilike."${term}"`)
   }
 
-  query = query.order('created_at', { ascending: false }).limit(60)
+  const sortBy = filters.sortBy ?? 'newest'
+  if (sortBy === 'price_asc') {
+    query = query.order('price', { ascending: true, nullsFirst: false }).order('rent', { ascending: true, nullsFirst: false })
+  } else if (sortBy === 'price_desc') {
+    query = query.order('price', { ascending: false, nullsFirst: false }).order('rent', { ascending: false, nullsFirst: false })
+  } else if (sortBy === 'area_desc') {
+    query = query.order('area_sqft', { ascending: false, nullsFirst: false })
+  } else {
+    query = query.order('created_at', { ascending: false })
+  }
+
+  const limit = filters.limit ?? 60
+  query = query.limit(limit)
+
+  if (filters.offset) {
+    query = query.range(filters.offset, filters.offset + limit - 1)
+  }
 
   const { data, error } = await query
 

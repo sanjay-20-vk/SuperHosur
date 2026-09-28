@@ -30,8 +30,15 @@ const AVAILABILITY_OPTIONS: { label: string; value: 'all' | 'available' | 'limit
 ]
 
 export function CatalogPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const initialSearch = sanitizeSearchQuery(searchParams.get('q') ?? '')
+  const initialType = (searchParams.get('type') as OfferingType) || 'all'
+  const initialCategory = searchParams.get('category') ?? null
+  const initialSubcategory = searchParams.get('subcategory') ?? null
+  const initialAvailability =
+    (searchParams.get('availability') as 'available' | 'limited') || 'all'
+  const initialSort =
+    (searchParams.get('sort') as CatalogFilterOptions['sortBy']) || 'newest'
 
   const [offerings, setOfferings] = useState<CatalogOffering[]>([])
   const [categories, setCategories] = useState<CategorySummary[]>([])
@@ -41,11 +48,11 @@ export function CatalogPage() {
 
   const [searchValue, setSearchValue] = useState(initialSearch)
   const [debouncedSearch, setDebouncedSearch] = useState(initialSearch)
-  const [selectedType, setSelectedType] = useState<'all' | OfferingType>('all')
-  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(null)
-  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string | null>(null)
-  const [selectedAvailability, setSelectedAvailability] = useState<'all' | 'available' | 'limited'>('all')
-  const [selectedSort, setSelectedSort] = useState<CatalogFilterOptions['sortBy']>('newest')
+  const [selectedType, setSelectedType] = useState<'all' | OfferingType>(initialType)
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string | null>(initialCategory)
+  const [selectedSubcategoryId, setSelectedSubcategoryId] = useState<string | null>(initialSubcategory)
+  const [selectedAvailability, setSelectedAvailability] = useState<'all' | 'available' | 'limited'>(initialAvailability)
+  const [selectedSort, setSelectedSort] = useState<CatalogFilterOptions['sortBy']>(initialSort)
 
   const displayedSubcategories = selectedCategoryId ? subcategories : []
 
@@ -56,6 +63,18 @@ export function CatalogPage() {
     }, 300)
     return () => window.clearTimeout(timer)
   }, [searchValue])
+
+  // Sync URL search params
+  useEffect(() => {
+    const params = new URLSearchParams()
+    if (debouncedSearch) params.set('q', debouncedSearch)
+    if (selectedType !== 'all') params.set('type', selectedType)
+    if (selectedCategoryId) params.set('category', selectedCategoryId)
+    if (selectedSubcategoryId) params.set('subcategory', selectedSubcategoryId)
+    if (selectedAvailability !== 'all') params.set('availability', selectedAvailability)
+    if (selectedSort && selectedSort !== 'newest') params.set('sort', selectedSort)
+    setSearchParams(params, { replace: true })
+  }, [debouncedSearch, selectedType, selectedCategoryId, selectedSubcategoryId, selectedAvailability, selectedSort, setSearchParams])
 
   // Load categories
   useEffect(() => {

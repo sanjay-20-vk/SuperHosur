@@ -4,6 +4,8 @@ import { attachApprovedCoverPhotos } from './photos'
 export type BusinessSummary = {
   id: string
   name: string
+  slug?: string
+  city_id?: string
   category_id: string
   description: string | null
   address?: string | null
@@ -11,11 +13,18 @@ export type BusinessSummary = {
   longitude?: number | null
   cover_photo_url: string | null
   cover_photo_alt: string | null
+  created_at?: string
 }
+
+export type BusinessSortOption = 'name_asc' | 'name_desc' | 'newest'
 
 export type BusinessSearchOptions = {
   search?: string
   categoryId?: string | null
+  cityId?: string | null
+  sortBy?: BusinessSortOption
+  limit?: number
+  offset?: number
 }
 
 export type BusinessRecord = {
@@ -180,7 +189,10 @@ export async function getBusinesses(
   const supabase = getSupabaseClient()
   const normalizedSearch = options.search?.trim() ?? ''
   const categoryId = options.categoryId ?? null
-  const businessSelect = 'id, name, category_id, description, address, latitude, longitude'
+  const cityId = options.cityId ?? null
+  const sortBy = options.sortBy ?? 'name_asc'
+  const limit = options.limit ?? 60
+  const businessSelect = 'id, name, slug, city_id, category_id, description, address, latitude, longitude, created_at'
 
   let query = supabase
     .from('businesses')
@@ -192,8 +204,27 @@ export async function getBusinesses(
     query = query.eq('category_id', categoryId)
   }
 
+  if (cityId && cityId !== 'all') {
+    query = query.eq('city_id', cityId)
+  }
+
+  function applySorting<T extends { order: (col: string, opts?: { ascending?: boolean }) => T }>(q: T): T {
+    if (sortBy === 'name_desc') {
+      return q.order('name', { ascending: false })
+    }
+    if (sortBy === 'newest') {
+      return q.order('created_at', { ascending: false })
+    }
+    return q.order('name', { ascending: true })
+  }
+
   if (!normalizedSearch) {
-    const { data, error } = await query.order('name').limit(50)
+    let orderedQuery = applySorting(query).limit(limit)
+    if (options.offset) {
+      orderedQuery = orderedQuery.range(options.offset, options.offset + limit - 1)
+    }
+
+    const { data, error } = await orderedQuery
 
     if (error) {
       throw error
@@ -247,8 +278,12 @@ export async function getBusinesses(
     )
   }
 
+  let orderedQuery = applySorting(query).limit(limit)
+  if (options.offset) {
+    orderedQuery = orderedQuery.range(options.offset, options.offset + limit - 1)
+  }
 
-  const { data, error } = await query.order('name').limit(50)
+  const { data, error } = await orderedQuery
 
   if (error) {
     throw error
