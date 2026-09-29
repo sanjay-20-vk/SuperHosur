@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Header } from '../components/Header'
 import { LoadingState } from '../components/LoadingState'
-import { HosurMap } from '../components/HosurMap'
 import { SaveListingButton } from '../components/SaveListingButton'
+import { ReportModal } from '../components/ReportModal'
+import { DirectMessageDrawer } from '../components/DirectMessageDrawer'
+import { getOrCreateDirectConversation } from '../services/directMessages'
+
+const HosurMap = lazy(() => import('../components/HosurMap').then((m) => ({ default: m.HosurMap })))
 import { getCurrentSession } from '../services/auth'
 import {
   getApprovedPropertyPhotos,
@@ -12,6 +16,14 @@ import {
   type PropertyPhotoWithUrl,
   type PropertyRecord,
 } from '../services/properties'
+import {
+  trackCallClick,
+  trackListingView,
+  trackWhatsAppClick,
+} from '../services/analytics'
+import { SEO } from '../components/SEO'
+import { ShareListingButton } from '../components/ShareListingButton'
+import { buildRealEstateSchema, getCanonicalUrl } from '../utils/seo'
 
 function formatCurrency(amount: number | null): string {
   if (amount === null || isNaN(amount)) return 'Price on request'
@@ -37,6 +49,12 @@ export function PropertyDetailPage() {
   const [isOwner, setIsOwner] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [reportModalOpen, setReportModalOpen] = useState(false)
+  const [chatDrawerOpen, setChatDrawerOpen] = useState(false)
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const [chatStarting, setChatStarting] = useState(false)
+  const [chatError, setChatError] = useState<string | null>(null)
+  const [hasSession, setHasSession] = useState(false)
   const [ownerContact, setOwnerContact] = useState<{
     full_name: string | null
     phone: string | null
@@ -63,11 +81,15 @@ export function PropertyDetailPage() {
         setPhotos(photoRows)
         setActivePhotoId(photoRows.find((p) => p.is_primary)?.id ?? photoRows[0]?.id ?? null)
         setIsOwner(Boolean(session?.user?.id && session.user.id === propData.owner_id))
+        setHasSession(Boolean(session?.user?.id))
 
         // Fetch owner contact via SECURITY DEFINER RPC so that the profiles
         // table needs no new RLS policy. Fails silently (null) on any error.
         const contact = await getPropertyOwnerContact(propertyId)
         setOwnerContact(contact)
+
+        // Track listing view (deduplicated per browser session)
+        trackListingView({ propertyId: propData.id })
       } catch (err) {
         if (
           typeof err === 'object' &&
@@ -87,6 +109,26 @@ export function PropertyDetailPage() {
     loadProperty()
   }, [propertyId])
 
+  async function handleOpenDirectMessage() {
+    if (!property) return
+    if (!hasSession) {
+      window.location.href = `/auth/signin?from=${encodeURIComponent(window.location.pathname)}`
+      return
+    }
+
+    try {
+      setChatStarting(true)
+      setChatError(null)
+      const res = await getOrCreateDirectConversation('property', property.id)
+      setActiveConversationId(res.conversation_id)
+      setChatDrawerOpen(true)
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : 'Unable to start chat with property owner.')
+    } finally {
+      setChatStarting(false)
+    }
+  }
+
   if (loading) {
     return (
       <>
@@ -101,6 +143,7 @@ export function PropertyDetailPage() {
   if (error || !property) {
     return (
       <>
+        <SEO title="Property Unavailable | SuperHosur" noindex />
         <Header />
         <section className="page-section">
           <div className="state-panel error-state" role="alert" style={{ marginTop: '32px' }}>
@@ -137,8 +180,33 @@ export function PropertyDetailPage() {
 
   const whatsappNumber = ownerPhone?.replace(/\D/g, '')
 
+  const structuredData = buildRealEstateSchema({
+    title: property.title,
+    description: property.description,
+    url: getCanonicalUrl(`/properties/${property.id}`),
+    image: activePhoto?.url || null,
+    propertyType: property.property_type,
+    listingType: property.listing_type,
+    price: property.price,
+    rent: property.rent,
+    address: property.address || null,
+    locationName: property.cities?.name || 'Hosur',
+    latitude: property.latitude,
+    longitude: property.longitude,
+  })
+
   return (
     <>
+      <SEO
+        title={`${property.title} | SuperHosur`}
+        description={
+          property.description?.trim() ||
+          `${property.title} — ${propertyTypeLabel} for ${listingLabel} in ${property.cities?.name || 'Hosur'}, Tamil Nadu.`
+        }
+        canonicalPath={`/properties/${property.id}`}
+        ogImage={activePhoto?.url || null}
+        structuredData={structuredData}
+      />
       <Header />
 
       <main className="business-detail-container">
@@ -155,6 +223,24 @@ export function PropertyDetailPage() {
               title={property.title}
               variant="detail-action"
             />
+
+            <ShareListingButton
+              title={property.title}
+              text={property.description}
+              url={getCanonicalUrl(`/properties/${property.id}`)}
+              variant="detail-action"
+            />
+
+            {!isOwner && (
+              <button
+                type="button"
+                className="business-report-action-btn"
+                onClick={() => setReportModalOpen(true)}
+                title="Report listing for spam or policy violation"
+              >
+                🚩 Report
+              </button>
+            )}
 
             {isOwner && (
               <Link
@@ -338,7 +424,7 @@ export function PropertyDetailPage() {
                           aria-label="Show property photo"
                           aria-pressed={photo.id === activePhoto.id}
                         >
-                          <img src={photo.url ?? ''} alt="" />
+                          <img src={photo.url ?? ''} alt="" loading="lazy" />
                         </button>
                       ))}
                     </div>
@@ -381,23 +467,25 @@ export function PropertyDetailPage() {
 
                 {property.latitude !== null && property.longitude !== null && (
                   <div style={{ borderRadius: 'var(--radius-xl)', overflow: 'hidden', border: '1px solid var(--color-border)' }}>
-                    <HosurMap
-                      markers={[
-                        {
-                          id: property.id,
-                          title: property.title,
-                          type: 'property',
-                          latitude: property.latitude,
-                          longitude: property.longitude,
-                          subtitle: `${propertyTypeLabel} • ${listingLabel}`,
-                          address: property.address,
-                        },
-                      ]}
-                      height="340px"
-                      center={[property.latitude, property.longitude]}
-                      zoom={15}
-                      showControls={false}
-                    />
+                    <Suspense fallback={<LoadingState message="Loading location map…" />}>
+                      <HosurMap
+                        markers={[
+                          {
+                            id: property.id,
+                            title: property.title,
+                            type: 'property',
+                            latitude: property.latitude,
+                            longitude: property.longitude,
+                            subtitle: `${propertyTypeLabel} • ${listingLabel}`,
+                            address: property.address,
+                          },
+                        ]}
+                        height="340px"
+                        center={[property.latitude, property.longitude]}
+                        zoom={15}
+                        showControls={false}
+                      />
+                    </Suspense>
                   </div>
                 )}
 
@@ -468,8 +556,31 @@ export function PropertyDetailPage() {
               </p>
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                {!isOwner && (
+                  <button
+                    type="button"
+                    className="contact-button-primary"
+                    style={{ background: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', color: '#ffffff', border: 'none', cursor: 'pointer' }}
+                    onClick={handleOpenDirectMessage}
+                    disabled={chatStarting}
+                    aria-label="Direct message property owner"
+                  >
+                    <span>💬</span> {chatStarting ? 'Connecting…' : 'Message Owner'}
+                  </button>
+                )}
+
+                {chatError && (
+                  <p style={{ color: '#b91c1c', fontSize: '0.8rem', margin: '4px 0 0' }}>
+                    {chatError}
+                  </p>
+                )}
+
                 {ownerPhone && (
-                  <a className="contact-button-primary" href={`tel:${ownerPhone}`}>
+                  <a
+                    className="contact-button-secondary"
+                    href={`tel:${ownerPhone}`}
+                    onClick={() => trackCallClick({ propertyId: property.id })}
+                  >
                     <span>📞</span> Call Owner ({ownerPhone})
                   </a>
                 )}
@@ -477,14 +588,15 @@ export function PropertyDetailPage() {
                   <a
                     className="contact-button-whatsapp"
                     href={`https://wa.me/${whatsappNumber}?text=${encodeURIComponent(`Hi, I am interested in your property "${property.title}" on SuperHosur.`)}`}
+                    onClick={() => trackWhatsAppClick({ propertyId: property.id })}
                     target="_blank"
                     rel="noreferrer"
                   >
                     <span>💬</span> WhatsApp Owner
                   </a>
                 )}
-                {!ownerPhone && (
-                  <Link to="/requirements/new" className="contact-button-primary">
+                {!ownerPhone && !isOwner && (
+                  <Link to="/requirements/new" className="contact-button-secondary">
                     <span>📝</span> Post a matching requirement
                   </Link>
                 )}
@@ -505,6 +617,25 @@ export function PropertyDetailPage() {
           </aside>
         </div>
       </main>
+
+      <ReportModal
+        isOpen={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+        entityType="property"
+        entityId={property.id}
+        entityTitle={property.title}
+      />
+
+      {activeConversationId && (
+        <DirectMessageDrawer
+          isOpen={chatDrawerOpen}
+          onClose={() => setChatDrawerOpen(false)}
+          conversationId={activeConversationId}
+          listingTitle={property.title}
+          listingSubtitle="Property Inquiry"
+          otherPartyName={ownerName}
+        />
+      )}
     </>
   )
 }

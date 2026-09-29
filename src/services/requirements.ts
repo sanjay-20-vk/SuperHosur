@@ -230,6 +230,7 @@ export async function getMyRequirements(): Promise<RequirementRecord[]> {
     `)
     .eq('customer_id', userId)
     .order('created_at', { ascending: false })
+    .limit(100)
 
   if (error) {
     throw error
@@ -918,6 +919,7 @@ export async function getVendorLeads(): Promise<VendorLeadRecord[]> {
       )
     `)
     .order('created_at', { ascending: false })
+    .limit(100)
 
   if (error) {
     throw error

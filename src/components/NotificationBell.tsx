@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import {
@@ -47,6 +47,8 @@ function getNotificationTypeIcon(
       return '📋'
     case 'quote_withdrawn':
       return '↩️'
+    case 'quote_message':
+      return '💬'
     case 'requirement_status':
       return '⚡'
     case 'new_lead':
@@ -56,7 +58,7 @@ function getNotificationTypeIcon(
   }
 }
 
-export function NotificationBell() {
+export const NotificationBell = memo(function NotificationBell() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const userId = user?.id
@@ -370,4 +372,4 @@ export function NotificationBell() {
       )}
     </div>
   )
-}
+})

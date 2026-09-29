@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   acceptRequirementQuote,
   cancelRequirement,
@@ -7,8 +7,12 @@ import {
   completeRequirement,
   getMyRequirements,
   getRequirementErrorMessage,
+  type QuoteStatus,
   type RequirementRecord,
+  type RequirementStatus,
 } from '../services/requirements'
+import { QuoteDiscussionDrawer } from '../components/QuoteDiscussionDrawer'
+import { SEO } from '../components/SEO'
 
 function formatBudget(min: number | null, max: number | null): string {
   if (min !== null && max !== null) {
@@ -69,6 +73,7 @@ function getStatusLabel(status: RequirementRecord['status']): string {
 }
 
 export function MyRequirementsPage() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [requirements, setRequirements] = useState<RequirementRecord[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -76,6 +81,42 @@ export function MyRequirementsPage() {
   const [closingId, setClosingId] = useState<string | null>(null)
   const [acceptingQuoteId, setAcceptingQuoteId] = useState<string | null>(null)
   const [completingReqId, setCompletingReqId] = useState<string | null>(null)
+  const [manualDiscussion, setManualDiscussion] = useState<{
+    requirementId: string
+    quoteId: string
+    requirementTitle: string
+    quoteAmount: number
+    quoteStatus: QuoteStatus
+    requirementStatus: RequirementStatus
+    otherPartyName: string
+    otherPartyRole: 'vendor' | 'customer'
+  } | null>(null)
+
+  let activeDiscussionFromParam = null
+  const quoteParam = searchParams.get('quoteId')
+  const reqParam = searchParams.get('requirementId')
+  if (quoteParam && requirements.length > 0) {
+    for (const req of requirements) {
+      if (!reqParam || req.id === reqParam) {
+        const matchQuote = req.quotes?.find((q) => q.id === quoteParam)
+        if (matchQuote) {
+          activeDiscussionFromParam = {
+            requirementId: req.id,
+            quoteId: matchQuote.id,
+            requirementTitle: req.title,
+            quoteAmount: Number(matchQuote.quote_amount),
+            quoteStatus: matchQuote.status,
+            requirementStatus: req.status,
+            otherPartyName: matchQuote.business?.name ?? 'Verified Business',
+            otherPartyRole: 'vendor' as const,
+          }
+          break
+        }
+      }
+    }
+  }
+
+  const activeDiscussion = manualDiscussion ?? activeDiscussionFromParam
 
   async function loadData() {
     try {
@@ -196,6 +237,7 @@ export function MyRequirementsPage() {
 
   return (
     <section className="page-section owner-dashboard req-dashboard" aria-label="Customer Requirements Management">
+      <SEO title="My Requirements | SuperHosur" noindex />
       {/* Premium Page Header */}
       <header className="req-header-banner">
         <div className="req-header-content">
@@ -602,6 +644,33 @@ export function MyRequirementsPage() {
                                         🏢 View profile
                                       </Link>
                                     )}
+                                    <button
+                                      type="button"
+                                      className="text-action"
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '4px',
+                                        color: 'var(--color-primary, #17594d)',
+                                        fontWeight: 700,
+                                        cursor: 'pointer',
+                                      }}
+                                      onClick={() =>
+                                        setManualDiscussion({
+                                          requirementId: req.id,
+                                          quoteId: q.id,
+                                          requirementTitle: req.title,
+                                          quoteAmount: Number(q.quote_amount),
+                                          quoteStatus: q.status,
+                                          requirementStatus: req.status,
+                                          otherPartyName: q.business?.name ?? 'Verified Business',
+                                          otherPartyRole: 'vendor',
+                                        })
+                                      }
+                                      aria-label={`Open discussion with ${q.business?.name ?? 'vendor'}`}
+                                    >
+                                      💬 Discussion
+                                    </button>
                                   </div>
 
                                   <span style={{ fontSize: '0.78rem', color: 'var(--color-text-subtle)' }}>
@@ -741,6 +810,29 @@ export function MyRequirementsPage() {
             })}
           </div>
         </div>
+      )}
+
+      {activeDiscussion && (
+        <QuoteDiscussionDrawer
+          isOpen={Boolean(activeDiscussion)}
+          onClose={() => {
+            setManualDiscussion(null)
+            if (searchParams.has('quoteId')) {
+              const next = new URLSearchParams(searchParams)
+              next.delete('quoteId')
+              next.delete('requirementId')
+              setSearchParams(next, { replace: true })
+            }
+          }}
+          requirementId={activeDiscussion.requirementId}
+          quoteId={activeDiscussion.quoteId}
+          requirementTitle={activeDiscussion.requirementTitle}
+          quoteAmount={activeDiscussion.quoteAmount}
+          quoteStatus={activeDiscussion.quoteStatus}
+          requirementStatus={activeDiscussion.requirementStatus}
+          otherPartyName={activeDiscussion.otherPartyName}
+          otherPartyRole={activeDiscussion.otherPartyRole}
+        />
       )}
     </section>
   )

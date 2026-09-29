@@ -29,6 +29,7 @@ export async function getAdminUsers(): Promise<AdminUserRecord[]> {
     .from('profiles')
     .select('*')
     .order('created_at', { ascending: false })
+    .limit(200)
 
   if (error) {
     throw error

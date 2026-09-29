@@ -1,6 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import type { BusinessRecord } from '../../services/businesses'
+import type {
+  BusinessRecord,
+  BulkModerationAction,
+  BulkModerationResponse,
+} from '../../services/businesses'
 import type { AdminBusinessPhoto } from '../../services/photos'
 import type { AdminBusinessVideo } from '../../services/videos'
 
@@ -73,6 +77,11 @@ export interface AdminBusinessModerationProps {
     moderationStatus: 'approved' | 'rejected',
     confirmation: string,
   ) => Promise<void>
+  onBulkModerate?: (
+    businessIds: string[],
+    action: BulkModerationAction,
+    reason?: string,
+  ) => Promise<BulkModerationResponse>
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -88,6 +97,7 @@ export function AdminBusinessModeration({
   onRejectBusiness,
   onUpdatePhotoStatus,
   onUpdateVideoStatus,
+  onBulkModerate,
 }: AdminBusinessModerationProps) {
   const [filter, setFilter] = useState<FilterKey>('all')
   const [search, setSearch] = useState('')
@@ -95,6 +105,14 @@ export function AdminBusinessModeration({
   const [rejectionReason, setRejectionReason] = useState('')
   const [rejectionError, setRejectionError] = useState<string | null>(null)
   const [isSubmittingRejection, setIsSubmittingRejection] = useState(false)
+
+  // ── Bulk moderation state ───────────────────────────────────────────────────
+  const [selectedBusinessIds, setSelectedBusinessIds] = useState<Set<string>>(new Set())
+  const [isBulkRejectionOpen, setIsBulkRejectionOpen] = useState(false)
+  const [bulkRejectionReason, setBulkRejectionReason] = useState('')
+  const [bulkRejectionError, setBulkRejectionError] = useState<string | null>(null)
+  const [bulkActionLoading, setBulkActionLoading] = useState(false)
+  const [bulkResultResponse, setBulkResultResponse] = useState<BulkModerationResponse | null>(null)
 
   // ── Derived counts ──────────────────────────────────────────────────────────
   const pendingCount = businesses.filter((b) => getStatusKey(b) === 'pending').length
@@ -156,6 +174,75 @@ export function AdminBusinessModeration({
       (b.email ?? '').toLowerCase().includes(q)
     return matchesFilter && matchesSearch
   })
+
+  // ── Bulk moderation handlers ────────────────────────────────────────────────
+  function toggleSelectBusiness(id: string) {
+    setSelectedBusinessIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) {
+        next.delete(id)
+      } else {
+        next.add(id)
+      }
+      return next
+    })
+  }
+
+  const allVisibleSelected =
+    filteredBusinesses.length > 0 &&
+    filteredBusinesses.every((b) => selectedBusinessIds.has(b.id))
+
+  function handleToggleSelectAllVisible() {
+    if (allVisibleSelected) {
+      setSelectedBusinessIds((prev) => {
+        const next = new Set(prev)
+        for (const b of filteredBusinesses) {
+          next.delete(b.id)
+        }
+        return next
+      })
+    } else {
+      setSelectedBusinessIds((prev) => {
+        const next = new Set(prev)
+        for (const b of filteredBusinesses) {
+          next.add(b.id)
+        }
+        return next
+      })
+    }
+  }
+
+  async function handleBulkAction(action: BulkModerationAction, reason?: string) {
+    if (!onBulkModerate) return
+    const ids = Array.from(selectedBusinessIds)
+    if (ids.length === 0) return
+
+    if (action === 'reject') {
+      const trimmed = (reason ?? bulkRejectionReason).trim()
+      if (!trimmed || trimmed.length < 5) {
+        setBulkRejectionError('Please provide a rejection reason of at least 5 characters.')
+        return
+      }
+    } else {
+      if (!window.confirm(`Are you sure you want to ${action} ${ids.length} selected business(es)?`)) {
+        return
+      }
+    }
+
+    try {
+      setBulkActionLoading(true)
+      setBulkRejectionError(null)
+      const res = await onBulkModerate(ids, action, reason ?? bulkRejectionReason)
+      setBulkResultResponse(res)
+      setSelectedBusinessIds(new Set())
+      setIsBulkRejectionOpen(false)
+      setBulkRejectionReason('')
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Bulk moderation failed.')
+    } finally {
+      setBulkActionLoading(false)
+    }
+  }
 
   // ── Loading ─────────────────────────────────────────────────────────────────
   if (loading) {
@@ -319,6 +406,111 @@ export function AdminBusinessModeration({
           </div>
         </div>
 
+        {/* Bulk Moderation Result Banner */}
+        {bulkResultResponse && (
+          <div
+            className={`abm-bulk-result-banner ${bulkResultResponse.failed_count > 0 ? 'abm-bulk-result-banner--warning' : 'abm-bulk-result-banner--success'}`}
+            role="alert"
+          >
+            <div className="abm-bulk-result-header">
+              <strong>
+                {bulkResultResponse.failed_count > 0
+                  ? `Bulk moderation completed with ${bulkResultResponse.failed_count} failure(s): ${bulkResultResponse.succeeded_count} succeeded, ${bulkResultResponse.failed_count} failed.`
+                  : `Bulk moderation completed successfully! ${bulkResultResponse.succeeded_count} listing(s) updated.`}
+              </strong>
+              <button
+                type="button"
+                className="abm-bulk-result-close"
+                onClick={() => setBulkResultResponse(null)}
+                aria-label="Dismiss bulk result"
+              >
+                ✕
+              </button>
+            </div>
+            {bulkResultResponse.failed_count > 0 && (
+              <ul className="abm-bulk-failure-list">
+                {bulkResultResponse.results
+                  .filter((r) => !r.success)
+                  .map((item) => (
+                    <li key={item.id}>
+                      <strong>{item.title}</strong>: {item.error}
+                    </li>
+                  ))}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* Bulk Moderation Action Bar */}
+        {onBulkModerate && filteredBusinesses.length > 0 && (
+          <div className="abm-bulk-bar" role="toolbar" aria-label="Bulk moderation actions">
+            <div className="abm-bulk-select-group">
+              <label className="abm-bulk-checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={handleToggleSelectAllVisible}
+                  aria-label="Select all visible businesses"
+                />
+                <span>Select All Visible ({filteredBusinesses.length})</span>
+              </label>
+              {selectedBusinessIds.size > 0 && (
+                <span className="abm-bulk-counter-pill">
+                  {selectedBusinessIds.size} selected
+                </span>
+              )}
+            </div>
+
+            {selectedBusinessIds.size > 0 && (
+              <div className="abm-bulk-actions">
+                <button
+                  type="button"
+                  className="abm-bulk-btn abm-bulk-btn--approve"
+                  disabled={bulkActionLoading}
+                  onClick={() => void handleBulkAction('approve')}
+                >
+                  ✓ Bulk Approve ({selectedBusinessIds.size})
+                </button>
+                <button
+                  type="button"
+                  className="abm-bulk-btn abm-bulk-btn--reject"
+                  disabled={bulkActionLoading}
+                  onClick={() => {
+                    setBulkRejectionError(null)
+                    setIsBulkRejectionOpen(true)
+                  }}
+                >
+                  ✕ Bulk Reject ({selectedBusinessIds.size})
+                </button>
+                <button
+                  type="button"
+                  className="abm-bulk-btn abm-bulk-btn--suspend"
+                  disabled={bulkActionLoading}
+                  onClick={() => void handleBulkAction('suspend')}
+                >
+                  ⏸ Bulk Suspend
+                </button>
+                <button
+                  type="button"
+                  className="abm-bulk-btn abm-bulk-btn--restore"
+                  disabled={bulkActionLoading}
+                  onClick={() => void handleBulkAction('restore')}
+                >
+                  ↺ Bulk Restore
+                </button>
+                <button
+                  type="button"
+                  className="abm-bulk-btn abm-bulk-btn--clear"
+                  disabled={bulkActionLoading}
+                  onClick={() => setSelectedBusinessIds(new Set())}
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Empty filtered state */}
         {filteredBusinesses.length === 0 ? (
           <div className="abm-empty-card" role="status">
@@ -355,6 +547,16 @@ export function AdminBusinessModeration({
                   {/* Card header row */}
                   <div className="abm-biz-card-header">
                     <div className="abm-biz-card-meta">
+                      {onBulkModerate && (
+                        <label className="abm-checkbox-label">
+                          <input
+                            type="checkbox"
+                            checked={selectedBusinessIds.has(business.id)}
+                            onChange={() => toggleSelectBusiness(business.id)}
+                            aria-label={`Select ${business.name}`}
+                          />
+                        </label>
+                      )}
                       <span className="abm-biz-kind-badge">Business Listing</span>
                       {pendingMediaCount > 0 && (
                         <span className="abm-media-alert-pill" aria-label={`${pendingMediaCount} media items pending review`}>
@@ -995,6 +1197,120 @@ export function AdminBusinessModeration({
                   </>
                 ) : (
                   '✕ Confirm Rejection'
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Rejection Modal */}
+      {isBulkRejectionOpen && (
+        <div
+          className="modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="abm-bulk-reject-title"
+        >
+          <div className="modal-card">
+            <div className="modal-header">
+              <div>
+                <p className="eyebrow" style={{ color: '#ef4444' }}>Bulk Moderation Action</p>
+                <h3 id="abm-bulk-reject-title" className="modal-title">
+                  Bulk Reject ({selectedBusinessIds.size}) Business Listings
+                </h3>
+              </div>
+              <button
+                type="button"
+                className="modal-close-btn"
+                aria-label="Close dialog"
+                disabled={bulkActionLoading}
+                onClick={() => {
+                  setIsBulkRejectionOpen(false)
+                  setBulkRejectionError(null)
+                }}
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="modal-body">
+              <p className="abm-modal-target-info">
+                You are rejecting <strong>{selectedBusinessIds.size}</strong> business listing(s).
+                A valid rejection reason (minimum 5 characters) is required. Owners will receive this feedback.
+              </p>
+
+              {/* Preset suggestion chips */}
+              <div className="abm-preset-reasons-wrap">
+                <p className="abm-preset-reasons-label">Quick Suggestions:</p>
+                <div className="abm-preset-tags">
+                  {PRESET_REASONS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      className="abm-preset-chip"
+                      onClick={() => {
+                        setBulkRejectionReason(preset)
+                        setBulkRejectionError(null)
+                      }}
+                    >
+                      + {preset}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="field-group">
+                <label htmlFor="bulk-rejection-reason" className="field-label">
+                  Rejection Reason <span className="field-required">*</span>
+                </label>
+                <textarea
+                  id="bulk-rejection-reason"
+                  className="abm-rejection-textarea"
+                  rows={4}
+                  placeholder="Detail the exact reason for bulk rejection (min 5 characters)…"
+                  value={bulkRejectionReason}
+                  onChange={(e) => {
+                    setBulkRejectionReason(e.target.value)
+                    setBulkRejectionError(null)
+                  }}
+                  disabled={bulkActionLoading}
+                  autoFocus
+                />
+                {bulkRejectionError && (
+                  <p className="field-error" role="alert">
+                    {bulkRejectionError}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="modal-footer">
+              <button
+                type="button"
+                className="abm-action-btn abm-action-btn--secondary"
+                disabled={bulkActionLoading}
+                onClick={() => {
+                  setIsBulkRejectionOpen(false)
+                  setBulkRejectionError(null)
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="abm-action-btn abm-action-btn--reject-confirm"
+                disabled={bulkActionLoading}
+                aria-busy={bulkActionLoading}
+                onClick={() => void handleBulkAction('reject', bulkRejectionReason)}
+              >
+                {bulkActionLoading ? (
+                  <>
+                    <span className="abm-btn-spinner" aria-hidden="true" />
+                    Executing Bulk Rejection…
+                  </>
+                ) : (
+                  `✕ Confirm Bulk Reject (${selectedBusinessIds.size})`
                 )}
               </button>
             </div>

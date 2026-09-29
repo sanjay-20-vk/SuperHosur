@@ -4,8 +4,11 @@ import {
   getAdminBusinesses,
   updateBusinessVisibility,
   rejectBusiness,
+  bulkModerateBusinesses,
   type BusinessRecord,
   type BusinessVisibilityUpdate,
+  type BulkModerationAction,
+  type BulkModerationResponse,
 } from '../services/businesses'
 import {
   getAdminReviewPhotos,
@@ -38,11 +41,14 @@ import {
   updatePropertyModeration,
   rejectProperty,
   updatePropertyPhotoModeration,
+  bulkModerateProperties,
   getPropertyErrorMessage,
   type PropertySummary,
   type AdminPropertyPhoto,
   type PropertyModerationUpdate,
 } from '../services/properties'
+import { SEO } from '../components/SEO'
+import { AdminSystemHealth } from '../components/admin/AdminSystemHealth'
 import {
   getAdminRequirements,
   updateAdminRequirementStatus,
@@ -57,6 +63,7 @@ import {
   type AdminUserRecord,
   type UserRole,
 } from '../services/users'
+import { recordAdminAudit } from '../services/auditLog'
 
 import { AdminBusinessModeration } from '../components/admin/AdminBusinessModeration'
 import { AdminReviewsModeration } from '../components/admin/AdminReviewsModeration'
@@ -65,6 +72,9 @@ import { AdminSubcategoryManagement } from '../components/admin/AdminSubcategory
 import { AdminPropertyModeration } from '../components/admin/AdminPropertyModeration'
 import { AdminRequirementsModeration } from '../components/admin/AdminRequirementsModeration'
 import { AdminUserManagement } from '../components/admin/AdminUserManagement'
+import { AdminAuditLog } from '../components/admin/AdminAuditLog'
+import { AdminReportModeration } from '../components/admin/AdminReportModeration'
+import { getAdminReports, type ReportRecord } from '../services/reports'
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error && error.message
@@ -73,14 +83,20 @@ function getErrorMessage(error: unknown): string {
 }
 
 export type AdminBusinessesPageProps = {
-  initialTab?: 'moderation' | 'taxonomy' | 'properties' | 'requirements' | 'users'
+  initialTab?: 'moderation' | 'taxonomy' | 'properties' | 'requirements' | 'users' | 'audit-log' | 'reports' | 'health'
 }
 
 export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {}) {
   const navigate = useNavigate()
   const location = useLocation()
-  const currentTab: 'moderation' | 'taxonomy' | 'properties' | 'requirements' | 'users' =
-    location.pathname === '/admin/categories'
+  const currentTab: 'moderation' | 'taxonomy' | 'properties' | 'requirements' | 'users' | 'audit-log' | 'reports' | 'health' =
+    location.pathname === '/admin/health'
+      ? 'health'
+      : location.pathname === '/admin/reports'
+      ? 'reports'
+      : location.pathname === '/admin/audit-log'
+      ? 'audit-log'
+      : location.pathname === '/admin/categories'
       ? 'taxonomy'
       : location.pathname === '/admin/properties'
       ? 'properties'
@@ -136,8 +152,19 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
   const [userSearchQuery, setUserSearchQuery] = useState('')
   const [userActionLoadingId, setUserActionLoadingId] = useState<string | null>(null)
 
-  function handleTabChange(tab: 'moderation' | 'taxonomy' | 'properties' | 'requirements' | 'users') {
-    if (tab === 'taxonomy') {
+  // Abuse Reports State
+  const [reports, setReports] = useState<ReportRecord[]>([])
+  const [reportsLoading, setReportsLoading] = useState(true)
+  const [reportsError, setReportsError] = useState<string | null>(null)
+
+  function handleTabChange(tab: 'moderation' | 'taxonomy' | 'properties' | 'requirements' | 'users' | 'audit-log' | 'reports' | 'health') {
+    if (tab === 'health') {
+      navigate('/admin/health', { replace: true })
+    } else if (tab === 'reports') {
+      navigate('/admin/reports', { replace: true })
+    } else if (tab === 'audit-log') {
+      navigate('/admin/audit-log', { replace: true })
+    } else if (tab === 'taxonomy') {
       navigate('/admin/categories', { replace: true })
     } else if (tab === 'properties') {
       navigate('/admin/properties', { replace: true })
@@ -148,6 +175,26 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
     } else {
       navigate('/admin/businesses', { replace: true })
     }
+  }
+
+  async function handleBulkModerateBusinesses(
+    businessIds: string[],
+    action: BulkModerationAction,
+    reason?: string,
+  ): Promise<BulkModerationResponse> {
+    const res = await bulkModerateBusinesses(businessIds, action, reason)
+    await refreshBusinesses()
+    return res
+  }
+
+  async function handleBulkModerateProperties(
+    propertyIds: string[],
+    action: BulkModerationAction,
+    reason?: string,
+  ): Promise<BulkModerationResponse> {
+    const res = await bulkModerateProperties(propertyIds, action, reason)
+    await refreshProperties()
+    return res
   }
 
   async function refreshBusinesses() {
@@ -228,6 +275,19 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
     }
   }
 
+  async function refreshReports() {
+    try {
+      setReportsLoading(true)
+      setReportsError(null)
+      const data = await getAdminReports()
+      setReports(data)
+    } catch (err) {
+      setReportsError(err instanceof Error ? err.message : 'Unable to load reports.')
+    } finally {
+      setReportsLoading(false)
+    }
+  }
+
   useEffect(() => {
     async function loadInitial() {
       await Promise.all([
@@ -236,6 +296,7 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
         refreshProperties(),
         refreshRequirements(),
         refreshUsers(),
+        refreshReports(),
       ])
     }
 
@@ -250,6 +311,12 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
     try {
       setReqActionLoadingId(requirementId)
       await updateAdminRequirementStatus(requirementId, newStatus)
+      void recordAdminAudit({
+        actionType: `requirement_${newStatus}`,
+        entityType: 'requirement',
+        entityId: requirementId,
+        newStatus: newStatus,
+      })
       await refreshRequirements()
     } catch (err) {
       alert(getRequirementErrorMessage(err, 'Failed to update requirement status.'))
@@ -266,6 +333,12 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
     try {
       setUserActionLoadingId(userId)
       await updateAdminUserRole(userId, newRole)
+      void recordAdminAudit({
+        actionType: 'user_role_changed',
+        entityType: 'user',
+        entityId: userId,
+        newStatus: newRole,
+      })
       await refreshUsers()
     } catch (err) {
       alert(err instanceof Error ? err.message : 'Failed to update user role.')
@@ -282,6 +355,14 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
     try {
       setUserActionLoadingId(user.id)
       await setAdminUserActive(user.id, !user.active)
+      void recordAdminAudit({
+        actionType: user.active ? 'user_suspended' : 'user_restored',
+        entityType: 'user',
+        entityId: user.id,
+        entityName: user.full_name || user.email || null,
+        oldStatus: user.active ? 'active' : 'suspended',
+        newStatus: !user.active ? 'active' : 'suspended',
+      })
       await refreshUsers()
     } catch (err) {
       alert(err instanceof Error ? err.message : `Failed to ${action} user.`)
@@ -338,6 +419,14 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
       setPropertyActionId(photo.id)
       setPropertiesError(null)
       await updatePropertyPhotoModeration(photo.id, status)
+      void recordAdminAudit({
+        actionType: status === 'approved' ? 'property_photo_approved' : 'property_photo_rejected',
+        entityType: 'photo',
+        entityId: photo.id,
+        entityName: photo.property_title || null,
+        newStatus: status,
+        metadata: { photo_url: photo.url, is_primary: photo.is_primary },
+      })
       await refreshProperties()
     } catch (err) {
       setPropertiesError(getPropertyErrorMessage(err, 'Unable to update photo moderation.'))
@@ -393,6 +482,14 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
       setActionLoadingId(photo.id)
       setError(null)
       await updatePhotoModeration(photo.id, moderationStatus)
+      void recordAdminAudit({
+        actionType: moderationStatus === 'approved' ? 'business_photo_approved' : 'business_photo_rejected',
+        entityType: 'photo',
+        entityId: photo.id,
+        entityName: photo.business_name || null,
+        newStatus: moderationStatus,
+        metadata: { photo_url: photo.url, is_primary: photo.is_primary },
+      })
       await refreshBusinesses()
     } catch (updateError) {
       setError(getPhotoErrorMessage(updateError, 'Unable to update this photo.'))
@@ -412,6 +509,14 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
       setActionLoadingId(video.id)
       setError(null)
       await updateVideoModeration(video.id, moderationStatus)
+      void recordAdminAudit({
+        actionType: moderationStatus === 'approved' ? 'business_video_approved' : 'business_video_rejected',
+        entityType: 'video',
+        entityId: video.id,
+        entityName: video.business_name || null,
+        newStatus: moderationStatus,
+        metadata: { storage_path: video.storage_path },
+      })
       await refreshBusinesses()
     } catch (updateError) {
       setError(getVideoErrorMessage(updateError, 'Unable to update this video.'))
@@ -431,6 +536,14 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
       setActionLoadingId(review.id)
       setError(null)
       await updateReviewModeration(review.id, moderationStatus)
+      void recordAdminAudit({
+        actionType: moderationStatus === 'approved' ? 'business_review_approved' : 'business_review_rejected',
+        entityType: 'review',
+        entityId: review.id,
+        entityName: review.business_name || null,
+        newStatus: moderationStatus,
+        metadata: { rating: review.rating },
+      })
       await refreshBusinesses()
     } catch (updateError) {
       setError(getReviewErrorMessage(updateError, 'Unable to update this review.'))
@@ -441,6 +554,7 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
 
   return (
     <section className="page-section owner-dashboard admin-page">
+      <SEO title="Admin Oversight Portal | SuperHosur" noindex />
       <div className="dashboard-header">
         <div>
           <p className="eyebrow">Administration</p>
@@ -498,6 +612,33 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
         >
           Categories & Subcategories ({categories.length})
         </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={currentTab === 'audit-log'}
+          className={`admin-tab-btn ${currentTab === 'audit-log' ? 'active' : ''}`}
+          onClick={() => handleTabChange('audit-log')}
+        >
+          🛡️ Audit Log
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={currentTab === 'reports'}
+          className={`admin-tab-btn ${currentTab === 'reports' ? 'active' : ''}`}
+          onClick={() => handleTabChange('reports')}
+        >
+          🚩 Abuse Reports ({reports.filter((r) => r.status === 'pending' || r.status === 'reviewing').length})
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={currentTab === 'health'}
+          className={`admin-tab-btn ${currentTab === 'health' ? 'active' : ''}`}
+          onClick={() => handleTabChange('health')}
+        >
+          🩺 System Health
+        </button>
       </div>
 
       {/* TAB 1: MODERATION & LISTINGS */}
@@ -515,6 +656,7 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
               onRejectBusiness={handleRejectBusiness}
               onUpdatePhotoStatus={updatePhotoStatus}
               onUpdateVideoStatus={updateVideoStatus}
+              onBulkModerate={handleBulkModerateBusinesses}
             />
           </div>
           <div className="table-responsive">
@@ -594,6 +736,7 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
             onUpdateStatus={updatePropertyStatus}
             onRejectProperty={handleRejectProperty}
             onUpdatePhotoStatus={updatePropPhotoStatus}
+            onBulkModerate={handleBulkModerateProperties}
           />
         </div>
       )}
@@ -640,6 +783,32 @@ export function AdminBusinessesPage({ initialTab }: AdminBusinessesPageProps = {
             onRoleChange={handleAdminRoleChange}
             onActiveToggle={handleAdminUserActiveToggle}
           />
+        </div>
+      )}
+
+      {/* TAB 6: AUDIT LOG */}
+      {currentTab === 'audit-log' && (
+        <div className="table-responsive">
+          <AdminAuditLog />
+        </div>
+      )}
+
+      {/* TAB 7: ABUSE REPORTS & CONTENT MODERATION */}
+      {currentTab === 'reports' && (
+        <div className="table-responsive">
+          <AdminReportModeration
+            reports={reports}
+            loading={reportsLoading}
+            error={reportsError}
+            onRefresh={refreshReports}
+          />
+        </div>
+      )}
+
+      {/* TAB 8: SYSTEM HEALTH & TELEMETRY */}
+      {currentTab === 'health' && (
+        <div style={{ marginTop: '24px' }}>
+          <AdminSystemHealth />
         </div>
       )}
     </section>

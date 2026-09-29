@@ -86,6 +86,7 @@ export async function getBusinessReviews(businessId: string): Promise<BusinessRe
       .eq('business_id', businessId)
       .eq('moderation_status', 'approved')
       .order('created_at', { ascending: false })
+      .limit(50)
 
     if (error) {
       return localList

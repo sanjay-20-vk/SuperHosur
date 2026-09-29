@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { Header } from '../components/Header'
 import { LoadingState } from '../components/LoadingState'
 import { EmptyState } from '../components/EmptyState'
+import { SEO } from '../components/SEO'
 import {
   getSavedErrorMessage,
   getSavedListings,
@@ -57,7 +58,11 @@ export function SavedListingsPage() {
 
     void init()
 
-    function handleChanged() {
+    function handleChanged(e: Event) {
+      const customEvent = e as CustomEvent<{ source?: string }>
+      if (customEvent.detail?.source === 'saved-page') {
+        return
+      }
       void init()
     }
 
@@ -76,10 +81,10 @@ export function SavedListingsPage() {
     const previousItems = items
     setItems((prev) => prev.filter((item) => item.savedId !== savedId))
 
-    // Broadcast change
+    // Broadcast change to other components without re-triggering our own init()
     window.dispatchEvent(
       new CustomEvent('saved-listings-changed', {
-        detail: { targetType: itemType, targetId, isSaved: false },
+        detail: { targetType: itemType, targetId, isSaved: false, source: 'saved-page' },
       }),
     )
 
@@ -107,6 +112,7 @@ export function SavedListingsPage() {
 
   return (
     <>
+      <SEO title="Saved Listings | SuperHosur" noindex />
       <Header />
 
       <main className="owner-dash-shell saved-listings-main">

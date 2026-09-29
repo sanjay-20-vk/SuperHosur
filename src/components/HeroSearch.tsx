@@ -1,10 +1,12 @@
+import { memo } from 'react'
+
 type HeroSearchProps = {
   value: string
   onChange: (value: string) => void
   onSubmit?: () => void
 }
 
-export function HeroSearch({ value, onChange, onSubmit }: HeroSearchProps) {
+export const HeroSearch = memo(function HeroSearch({ value, onChange, onSubmit }: HeroSearchProps) {
   return (
     <div className="hero-search-panel" role="search" aria-label="Marketplace quick search">
       <div className="search-panel-header">
@@ -85,4 +87,4 @@ export function HeroSearch({ value, onChange, onSubmit }: HeroSearchProps) {
       </div>
     </div>
   )
-}
+})

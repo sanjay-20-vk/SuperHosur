@@ -58,6 +58,17 @@ export function validateBusinessPhotoFile(file: File): string | null {
   return null
 }
 
+type CachedPhotoUrl = {
+  url: string
+  expiresAt: number
+}
+
+const signedPhotoUrlCache = new Map<string, CachedPhotoUrl>()
+
+export function clearPhotoUrlCache(): void {
+  signedPhotoUrlCache.clear()
+}
+
 export async function getSignedPhotoUrlMap(paths: string[]): Promise<Map<string, string>> {
   const uniquePaths = Array.from(new Set(paths.filter((path) => path.trim().length > 0)))
   const urls = new Map<string, string>()
@@ -66,18 +77,38 @@ export async function getSignedPhotoUrlMap(paths: string[]): Promise<Map<string,
     return urls
   }
 
+  const now = Date.now()
+  const pathsToFetch: string[] = []
+
+  for (const path of uniquePaths) {
+    const cached = signedPhotoUrlCache.get(path)
+    // Retain 5 minutes validity safety buffer before expiry
+    if (cached && cached.expiresAt > now + 5 * 60 * 1000) {
+      urls.set(path, cached.url)
+    } else {
+      pathsToFetch.push(path)
+    }
+  }
+
+  if (pathsToFetch.length === 0) {
+    return urls
+  }
+
   const { data, error } = await getSupabaseClient()
     .storage
     .from(BUSINESS_PHOTOS_BUCKET)
-    .createSignedUrls(uniquePaths, SIGNED_URL_EXPIRES_IN)
+    .createSignedUrls(pathsToFetch, SIGNED_URL_EXPIRES_IN)
 
   if (error) {
     throw error
   }
 
+  const expiresAt = now + SIGNED_URL_EXPIRES_IN * 1000
+
   for (const item of data ?? []) {
     if (item.path && item.signedUrl) {
       urls.set(item.path, item.signedUrl)
+      signedPhotoUrlCache.set(item.path, { url: item.signedUrl, expiresAt })
     }
   }
 

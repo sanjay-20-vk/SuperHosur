@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import L from 'leaflet'
 import 'leaflet/dist/leaflet.css'
@@ -130,7 +130,7 @@ function buildPopupHtml(item: MapMarkerItem): string {
   `
 }
 
-export function HosurMap({
+export const HosurMap = memo(function HosurMap({
   markers = [],
   center = HOSUR_CENTER,
   zoom = 13,
@@ -157,25 +157,39 @@ export function HosurMap({
   const [activeTypeFilter, setActiveTypeFilter] = useState<'all' | 'business' | 'property'>('all')
 
   // Filter valid markers with non-null coordinates
-  const validMarkers = markers.filter(
-    (m) =>
-      typeof m.latitude === 'number' &&
-      typeof m.longitude === 'number' &&
-      !isNaN(m.latitude) &&
-      !isNaN(m.longitude) &&
-      m.latitude >= -90 &&
-      m.latitude <= 90 &&
-      m.longitude >= -180 &&
-      m.longitude <= 180,
+  const validMarkers = useMemo(
+    () =>
+      markers.filter(
+        (m) =>
+          typeof m.latitude === 'number' &&
+          typeof m.longitude === 'number' &&
+          !isNaN(m.latitude) &&
+          !isNaN(m.longitude) &&
+          m.latitude >= -90 &&
+          m.latitude <= 90 &&
+          m.longitude >= -180 &&
+          m.longitude <= 180,
+      ),
+    [markers],
   )
 
-  const businessCount = validMarkers.filter((m) => m.type === 'business').length
-  const propertyCount = validMarkers.filter((m) => m.type === 'property').length
+  const businessCount = useMemo(
+    () => validMarkers.filter((m) => m.type === 'business').length,
+    [validMarkers],
+  )
+  const propertyCount = useMemo(
+    () => validMarkers.filter((m) => m.type === 'property').length,
+    [validMarkers],
+  )
 
-  const filteredMarkers = validMarkers.filter((m) => {
-    if (activeTypeFilter === 'all') return true
-    return m.type === activeTypeFilter
-  })
+  const filteredMarkers = useMemo(
+    () =>
+      validMarkers.filter((m) => {
+        if (activeTypeFilter === 'all') return true
+        return m.type === activeTypeFilter
+      }),
+    [validMarkers, activeTypeFilter],
+  )
 
   // Initialize Map
   useEffect(() => {
@@ -345,4 +359,4 @@ export function HosurMap({
       )}
     </div>
   )
-}
+})

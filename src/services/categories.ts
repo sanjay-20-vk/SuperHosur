@@ -79,42 +79,99 @@ export function getCategoryErrorMessage(error: unknown, fallback = 'Unable to up
   return fallback
 }
 
+let cachedCategories: CategorySummary[] | null = null
+let pendingCategoriesPromise: Promise<CategorySummary[]> | null = null
+const subcategoriesCache = new Map<string, SubcategorySummary[]>()
+const pendingSubcategoriesPromises = new Map<string, Promise<SubcategorySummary[]>>()
+
+export function clearCategoryCache(): void {
+  cachedCategories = null
+  pendingCategoriesPromise = null
+  subcategoriesCache.clear()
+  pendingSubcategoriesPromises.clear()
+}
+
 export async function getCategories(): Promise<CategorySummary[]> {
-  const supabase = getSupabaseClient()
-
-  const { data, error } = await supabase
-    .from('categories')
-    .select('id, name, slug')
-    .eq('active', true)
-    .order('name')
-
-  if (error) {
-    throw error
+  if (cachedCategories) {
+    return cachedCategories
+  }
+  if (pendingCategoriesPromise) {
+    return pendingCategoriesPromise
   }
 
-  return data ?? []
+  const supabase = getSupabaseClient()
+
+  pendingCategoriesPromise = (async () => {
+    try {
+      const { data, error } = await supabase
+        .from('categories')
+        .select('id, name, slug')
+        .eq('active', true)
+        .order('name')
+
+      if (error) {
+        throw error
+      }
+
+      cachedCategories = data ?? []
+      return cachedCategories
+    } finally {
+      pendingCategoriesPromise = null
+    }
+  })()
+
+  return pendingCategoriesPromise
 }
 
 export async function getSubcategories(categoryId?: string): Promise<SubcategorySummary[]> {
+  if (categoryId) {
+    const cached = subcategoriesCache.get(categoryId)
+    if (cached) {
+      return cached
+    }
+    const pending = pendingSubcategoriesPromises.get(categoryId)
+    if (pending) {
+      return pending
+    }
+  }
+
   const supabase = getSupabaseClient()
 
-  let query = supabase
-    .from('subcategories')
-    .select('id, category_id, name, slug, description')
-    .eq('active', true)
-    .order('name')
+  const fetchPromise = (async () => {
+    try {
+      let query = supabase
+        .from('subcategories')
+        .select('id, category_id, name, slug, description')
+        .eq('active', true)
+        .order('name')
+
+      if (categoryId) {
+        query = query.eq('category_id', categoryId)
+      }
+
+      const { data, error } = await query
+
+      if (error) {
+        throw error
+      }
+
+      const result = (data ?? []) as SubcategorySummary[]
+      if (categoryId) {
+        subcategoriesCache.set(categoryId, result)
+      }
+      return result
+    } finally {
+      if (categoryId) {
+        pendingSubcategoriesPromises.delete(categoryId)
+      }
+    }
+  })()
 
   if (categoryId) {
-    query = query.eq('category_id', categoryId)
+    pendingSubcategoriesPromises.set(categoryId, fetchPromise)
   }
 
-  const { data, error } = await query
-
-  if (error) {
-    throw error
-  }
-
-  return (data ?? []) as SubcategorySummary[]
+  return fetchPromise
 }
 
 export async function getAdminCategories(): Promise<CategoryRecord[]> {
@@ -179,6 +236,7 @@ export async function createCategory(input: CategoryCreateInput): Promise<Catego
     throw error
   }
 
+  clearCategoryCache()
   return data as CategoryRecord
 }
 
@@ -220,6 +278,7 @@ export async function updateCategory(id: string, input: CategoryUpdateInput): Pr
     throw error
   }
 
+  clearCategoryCache()
   return data as CategoryRecord
 }
 
@@ -233,6 +292,7 @@ export async function setCategoryActive(id: string, active: boolean): Promise<vo
   if (error) {
     throw error
   }
+  clearCategoryCache()
 }
 
 export async function createSubcategory(input: SubcategoryCreateInput): Promise<SubcategoryRecord> {
@@ -270,6 +330,7 @@ export async function createSubcategory(input: SubcategoryCreateInput): Promise<
     throw error
   }
 
+  clearCategoryCache()
   return data as SubcategoryRecord
 }
 
@@ -311,6 +372,7 @@ export async function updateSubcategory(id: string, input: SubcategoryUpdateInpu
     throw error
   }
 
+  clearCategoryCache()
   return data as SubcategoryRecord
 }
 
@@ -324,5 +386,6 @@ export async function setSubcategoryActive(id: string, active: boolean): Promise
   if (error) {
     throw error
   }
+  clearCategoryCache()
 }
 

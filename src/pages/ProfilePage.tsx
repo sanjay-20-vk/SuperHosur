@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Header } from '../components/Header'
 import { LoadingState } from '../components/LoadingState'
+import { SEO } from '../components/SEO'
 import { useAuth } from '../hooks/useAuth'
 import {
   PROFILE_NAME_REGEX,
@@ -10,6 +11,11 @@ import {
   validateProfileInput,
   type UserProfile,
 } from '../services/auth'
+import {
+  getNotificationPreferences,
+  updateNotificationPreferences,
+  type NotificationPreferencesRecord,
+} from '../services/notificationPreferences'
 
 function getRoleLabel(role: UserProfile['role']): string {
   if (role === 'admin') return 'Administrator'
@@ -61,6 +67,44 @@ export function ProfilePage() {
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<ProfileFieldErrors>({})
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
+
+  // Notification Preferences State
+  const [notifPrefs, setNotifPrefs] = useState<NotificationPreferencesRecord | null>(null)
+  const [updatingPref, setUpdatingPref] = useState(false)
+  const [prefMessage, setPrefMessage] = useState<string | null>(null)
+
+  useEffect(() => {
+    async function loadPrefs() {
+      try {
+        const p = await getNotificationPreferences()
+        setNotifPrefs(p)
+      } catch {
+        // Silent fail
+      }
+    }
+    if (session?.user.id) {
+      void loadPrefs()
+    }
+  }, [session?.user.id])
+
+  async function handleTogglePref(key: keyof NotificationPreferencesRecord) {
+    if (!notifPrefs || updatingPref) return
+    try {
+      setUpdatingPref(true)
+      setPrefMessage(null)
+      const currentVal = Boolean(notifPrefs[key])
+      const updated = await updateNotificationPreferences({
+        [key]: !currentVal,
+      })
+      setNotifPrefs(updated)
+      setPrefMessage('Notification preferences updated.')
+      setTimeout(() => setPrefMessage(null), 3000)
+    } catch {
+      setPrefMessage('Failed to update preference.')
+    } finally {
+      setUpdatingPref(false)
+    }
+  }
 
   const clearFieldError = (field: keyof ProfileFieldErrors) => {
     if (fieldErrors[field]) {
@@ -176,6 +220,7 @@ export function ProfilePage() {
 
   return (
     <>
+      <SEO title="User Profile | SuperHosur" noindex />
       <Header />
 
       <section
@@ -421,6 +466,111 @@ export function ProfilePage() {
               </span>
             </label>
           </div>
+        </article>
+
+        {/* 4. Notification Preferences Card */}
+        <article className="business-card profile-card-section" aria-labelledby="notif-prefs-heading">
+          <div className="profile-section-heading">
+            <h2 id="notif-prefs-heading">Notification &amp; Channel Preferences</h2>
+            <p>Choose which channels and transactional events you wish to receive alerts for.</p>
+          </div>
+
+          {prefMessage && (
+            <div style={{ padding: '8px 12px', background: '#ecfdf5', color: '#065f46', borderRadius: '6px', fontSize: '0.85rem', marginBottom: '16px' }}>
+              ✓ {prefMessage}
+            </div>
+          )}
+
+          {notifPrefs ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '16px' }}>
+                {/* Email Channel */}
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px', background: notifPrefs.email_enabled ? '#f0fdf4' : '#ffffff' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <strong style={{ fontSize: '1rem', color: '#0f172a' }}>📧 Email Notifications</strong>
+                      <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#64748b' }}>
+                        Deliver to: {userEmail || 'Your account email'}
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={notifPrefs.email_enabled}
+                      disabled={updatingPref}
+                      onChange={() => void handleTogglePref('email_enabled')}
+                      style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                      aria-label="Toggle email notifications"
+                    />
+                  </div>
+                </div>
+
+                {/* WhatsApp Channel */}
+                <div style={{ border: '1px solid #e2e8f0', borderRadius: '10px', padding: '16px', background: notifPrefs.whatsapp_enabled ? '#f0fdf4' : '#ffffff' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <strong style={{ fontSize: '1rem', color: '#0f172a' }}>💬 WhatsApp Alerts</strong>
+                      <p style={{ margin: '4px 0 0', fontSize: '0.82rem', color: '#64748b' }}>
+                        Deliver to: {profile?.phone || 'Add phone number above'}
+                      </p>
+                    </div>
+                    <input
+                      type="checkbox"
+                      checked={notifPrefs.whatsapp_enabled}
+                      disabled={updatingPref || !profile?.phone}
+                      onChange={() => void handleTogglePref('whatsapp_enabled')}
+                      style={{ width: '20px', height: '20px', cursor: 'pointer' }}
+                      aria-label="Toggle WhatsApp notifications"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Event Subscriptions */}
+              <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: '16px' }}>
+                <h4 style={{ fontSize: '0.9rem', margin: '0 0 12px', color: '#334155' }}>Subscribed Events</h4>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={notifPrefs.quote_notifications}
+                      disabled={updatingPref}
+                      onChange={() => void handleTogglePref('quote_notifications')}
+                    />
+                    Quotation updates &amp; bids
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={notifPrefs.message_notifications}
+                      disabled={updatingPref}
+                      onChange={() => void handleTogglePref('message_notifications')}
+                    />
+                    Direct chat messages
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={notifPrefs.requirement_notifications}
+                      disabled={updatingPref}
+                      onChange={() => void handleTogglePref('requirement_notifications')}
+                    />
+                    Requirement status updates
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.85rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={notifPrefs.moderation_notifications}
+                      disabled={updatingPref}
+                      onChange={() => void handleTogglePref('moderation_notifications')}
+                    />
+                    Listing moderation results
+                  </label>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <p style={{ color: '#64748b', fontSize: '0.88rem' }}>Loading preferences…</p>
+          )}
         </article>
 
         {/* 4. Quick Account Navigation */}

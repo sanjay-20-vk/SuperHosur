@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { Header } from '../components/Header'
 import { LoadingState } from '../components/LoadingState'
-import { HosurMap } from '../components/HosurMap'
 import { SaveListingButton } from '../components/SaveListingButton'
+import { ReportModal } from '../components/ReportModal'
+import { DirectMessageDrawer } from '../components/DirectMessageDrawer'
+import { getOrCreateDirectConversation } from '../services/directMessages'
+
+const HosurMap = lazy(() => import('../components/HosurMap').then((m) => ({ default: m.HosurMap })))
 import { getCurrentSession } from '../services/auth'
 import { getBusinessById, type BusinessRecord } from '../services/businesses'
 import { getCategories, type CategorySummary } from '../services/categories'
@@ -16,6 +20,10 @@ import {
   submitBusinessReview,
   type BusinessReview,
 } from '../services/reviews'
+import { trackCallClick, trackListingView, trackWhatsAppClick } from '../services/analytics'
+import { SEO } from '../components/SEO'
+import { ShareListingButton } from '../components/ShareListingButton'
+import { buildLocalBusinessSchema, getCanonicalUrl } from '../utils/seo'
 function formatVideoDuration(seconds: number | null): string | null {
   if (!seconds || seconds <= 0) return null
   const m = Math.floor(seconds / 60)
@@ -46,6 +54,40 @@ export function BusinessDetailPage() {
   const [reviewError, setReviewError] = useState<string | null>(null)
   const [reviewFieldErrors, setReviewFieldErrors] = useState<{ rating?: string; comment?: string }>({})
   const [reviewSuccess, setReviewSuccess] = useState<string | null>(null)
+
+  // Report Modal State
+  const [reportModalOpen, setReportModalOpen] = useState(false)
+  const [reportingTarget, setReportingTarget] = useState<{
+    type: 'business' | 'review'
+    id: string
+    title?: string
+  }>({ type: 'business', id: '' })
+
+  // Direct Message Drawer State
+  const [chatDrawerOpen, setChatDrawerOpen] = useState(false)
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
+  const [chatStarting, setChatStarting] = useState(false)
+  const [chatError, setChatError] = useState<string | null>(null)
+
+  async function handleOpenDirectMessage() {
+    if (!business) return
+    if (!hasSession) {
+      window.location.href = `/auth/signin?from=${encodeURIComponent(window.location.pathname)}`
+      return
+    }
+
+    try {
+      setChatStarting(true)
+      setChatError(null)
+      const res = await getOrCreateDirectConversation('business', business.id)
+      setActiveConversationId(res.conversation_id)
+      setChatDrawerOpen(true)
+    } catch (err) {
+      setChatError(err instanceof Error ? err.message : 'Unable to start chat with business.')
+    } finally {
+      setChatStarting(false)
+    }
+  }
 
   useEffect(() => {
     async function loadBusiness() {
@@ -92,6 +134,9 @@ export function BusinessDetailPage() {
         setVideos(videoRows)
         setActivePhotoId(photoRows[0]?.id ?? null)
         setActiveVideoId(videoRows.find((v) => v.is_featured)?.id ?? videoRows[0]?.id ?? null)
+
+        // Track listing view (deduplicated per browser session)
+        trackListingView({ businessId: data.id })
 
         if (session?.user?.id) {
           setHasSession(true)
@@ -188,6 +233,7 @@ export function BusinessDetailPage() {
   if (error) {
     return (
       <>
+        <SEO title="Business Unavailable | SuperHosur" noindex />
         <Header />
         <main className="business-detail-container">
           <section className="state-panel error-state business-detail-state-panel" role="alert">
@@ -236,8 +282,34 @@ export function BusinessDetailPage() {
     ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1)
     : business.rating > 0 ? business.rating.toFixed(1) : null
 
+  const structuredData = buildLocalBusinessSchema({
+    name: business.name,
+    description: business.description,
+    url: getCanonicalUrl(`/businesses/${business.id}`),
+    image: activePhoto?.url || null,
+    telephone: phone || whatsappNumber || null,
+    address: address || null,
+    pincode: business.pincode || null,
+    cityName: city?.name || null,
+    categoryName: category?.name || null,
+    latitude: business.latitude,
+    longitude: business.longitude,
+    ratingValue: averageRating,
+    reviewCount: totalReviewsCount,
+  })
+
   return (
     <>
+      <SEO
+        title={`${business.name} | SuperHosur`}
+        description={
+          business.description?.trim() ||
+          `${business.name} is a verified ${category?.name || 'local business'} in ${city?.name || 'Hosur'}, Tamil Nadu.`
+        }
+        canonicalPath={`/businesses/${business.id}`}
+        ogImage={activePhoto?.url || null}
+        structuredData={structuredData}
+      />
       <Header />
 
       <main className="business-detail-container">
@@ -272,6 +344,32 @@ export function BusinessDetailPage() {
               title={business.name}
               variant="detail-action"
             />
+
+            <ShareListingButton
+              title={business.name}
+              text={business.description}
+              url={getCanonicalUrl(`/businesses/${business.id}`)}
+              variant="detail-action"
+            />
+
+            {!isOwner && (
+              <button
+                type="button"
+                className="business-report-action-btn"
+                onClick={() => {
+                  setReportingTarget({
+                    type: 'business',
+                    id: business.id,
+                    title: business.name,
+                  })
+                  setReportModalOpen(true)
+                }}
+                aria-label="Report listing"
+                title="Report this listing"
+              >
+                🚩 Report
+              </button>
+            )}
 
             {isOwner && (
               <Link to={`/owner/businesses/${business.id}/edit`} className="business-owner-edit-btn">
@@ -388,7 +486,7 @@ export function BusinessDetailPage() {
                         aria-label={photo.alt_text || `View photo ${index + 1} of ${visiblePhotos.length}`}
                         aria-pressed={photo.id === activePhoto.id}
                       >
-                        <img src={photo.url ?? ''} alt="" />
+                        <img src={photo.url ?? ''} alt="" loading="lazy" />
                         {photo.is_primary && (
                           <span className="photo-thumb-primary-dot" title="Primary photo" aria-hidden="true" />
                         )}
@@ -736,23 +834,25 @@ export function BusinessDetailPage() {
 
                 {business.latitude !== null && business.longitude !== null ? (
                   <div className="business-map-frame">
-                    <HosurMap
-                      markers={[
-                        {
-                          id: business.id,
-                          title: business.name,
-                          type: 'business',
-                          latitude: business.latitude,
-                          longitude: business.longitude,
-                          subtitle: category?.name || null,
-                          address: business.address,
-                        },
-                      ]}
-                      height="360px"
-                      center={[business.latitude, business.longitude]}
-                      zoom={15}
-                      showControls={false}
-                    />
+                    <Suspense fallback={<LoadingState message="Loading location map…" />}>
+                      <HosurMap
+                        markers={[
+                          {
+                            id: business.id,
+                            title: business.name,
+                            type: 'business',
+                            latitude: business.latitude,
+                            longitude: business.longitude,
+                            subtitle: category?.name || null,
+                            address: business.address,
+                          },
+                        ]}
+                        height="360px"
+                        center={[business.latitude, business.longitude]}
+                        zoom={15}
+                        showControls={false}
+                      />
+                    </Suspense>
                     <div className="business-map-footer-bar">
                       <span className="business-map-coord-badge">
                         <span className="coord-dot" aria-hidden="true" />
@@ -1036,6 +1136,24 @@ export function BusinessDetailPage() {
                           {rev.comment}
                         </p>
                       )}
+
+                      <div className="review-card-footer-actions">
+                        <button
+                          type="button"
+                          className="review-report-btn"
+                          onClick={() => {
+                            setReportingTarget({
+                              type: 'review',
+                              id: rev.id,
+                              title: `Review by ${rev.author_name}`,
+                            })
+                            setReportModalOpen(true)
+                          }}
+                          aria-label="Report review"
+                        >
+                          🚩 Report Review
+                        </button>
+                      </div>
                     </article>
                   ))}
                 </div>
@@ -1076,10 +1194,31 @@ export function BusinessDetailPage() {
 
               {/* Primary & Quick Contact Actions */}
               <div className="contact-buttons-list">
+                {!isOwner && (
+                  <button
+                    type="button"
+                    className="contact-button-primary"
+                    style={{ background: 'linear-gradient(135deg, #047857 0%, #065f46 100%)', color: '#ffffff', border: 'none', cursor: 'pointer' }}
+                    onClick={handleOpenDirectMessage}
+                    disabled={chatStarting}
+                    aria-label="Direct message business owner"
+                  >
+                    <span className="contact-btn-icon" aria-hidden="true">💬</span>
+                    <span>{chatStarting ? 'Connecting…' : 'Message Business'}</span>
+                  </button>
+                )}
+
+                {chatError && (
+                  <p style={{ color: '#b91c1c', fontSize: '0.8rem', margin: '4px 0 0' }}>
+                    {chatError}
+                  </p>
+                )}
+
                 {phone && (
                   <a
-                    className="contact-button-primary"
+                    className="contact-button-secondary"
                     href={`tel:${phone}`}
+                    onClick={() => trackCallClick({ businessId: business.id })}
                     aria-label={`Call ${business.name} at ${phone}`}
                   >
                     <span className="contact-btn-icon" aria-hidden="true">📞</span>
@@ -1090,6 +1229,7 @@ export function BusinessDetailPage() {
                   <a
                     className="contact-button-whatsapp"
                     href={`https://wa.me/${whatsappNumber}`}
+                    onClick={() => trackWhatsAppClick({ businessId: business.id })}
                     target="_blank"
                     rel="noreferrer"
                     aria-label={`Message ${business.name} on WhatsApp`}
@@ -1108,7 +1248,7 @@ export function BusinessDetailPage() {
                     <span>Email {email}</span>
                   </a>
                 )}
-                {!phone && !whatsappNumber && !email && (
+                {!phone && !whatsappNumber && !email && isOwner && (
                   <p className="contact-empty">No direct contact details have been provided yet.</p>
                 )}
               </div>
@@ -1121,7 +1261,11 @@ export function BusinessDetailPage() {
                       <span className="contact-row-icon" aria-hidden="true">📞</span>
                       <div className="contact-row-content">
                         <span className="contact-row-label">Phone</span>
-                        <a href={`tel:${phone}`} className="contact-row-val contact-row-link">
+                        <a
+                          href={`tel:${phone}`}
+                          onClick={() => trackCallClick({ businessId: business.id })}
+                          className="contact-row-val contact-row-link"
+                        >
                           {phone}
                         </a>
                       </div>
@@ -1135,6 +1279,7 @@ export function BusinessDetailPage() {
                         <span className="contact-row-label">WhatsApp</span>
                         <a
                           href={`https://wa.me/${whatsappNumber}`}
+                          onClick={() => trackWhatsAppClick({ businessId: business.id })}
                           target="_blank"
                           rel="noreferrer"
                           className="contact-row-val contact-row-link"
@@ -1191,6 +1336,25 @@ export function BusinessDetailPage() {
           </aside>
         </div>
       </main>
+
+      <ReportModal
+        isOpen={reportModalOpen}
+        onClose={() => setReportModalOpen(false)}
+        entityType={reportingTarget.type}
+        entityId={reportingTarget.id}
+        entityTitle={reportingTarget.title}
+      />
+
+      {activeConversationId && (
+        <DirectMessageDrawer
+          isOpen={chatDrawerOpen}
+          onClose={() => setChatDrawerOpen(false)}
+          conversationId={activeConversationId}
+          listingTitle={business.name}
+          listingSubtitle="Business Inquiry"
+          otherPartyName={business.name}
+        />
+      )}
     </>
   )
 }

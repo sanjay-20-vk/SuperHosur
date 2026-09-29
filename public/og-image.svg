@@ -1,0 +1,54 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#0f2b25" />
+      <stop offset="50%" stop-color="#17594d" />
+      <stop offset="100%" stop-color="#064e3b" />
+    </linearGradient>
+    <linearGradient id="badgeGrad" x1="0" y1="0" x2="300" y2="50" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1200" height="630" fill="url(#bgGrad)" />
+
+  <!-- Subtle Grid Overlay -->
+  <path d="M0 100 H1200 M0 200 H1200 M0 300 H1200 M0 400 H1200 M0 500 H1200" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1" />
+  <path d="M200 0 V630 M400 0 V630 M600 0 V630 M800 0 V630 M1000 0 V630" stroke="#ffffff" stroke-opacity="0.04" stroke-width="1" />
+
+  <!-- Verified Marketplace Badge -->
+  <rect x="80" y="80" width="310" height="44" rx="22" fill="#ffffff" fill-opacity="0.12" stroke="#ffffff" stroke-opacity="0.2" />
+  <circle cx="106" cy="102" r="7" fill="#34d399" />
+  <text x="124" y="108" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="18" font-weight="600" letter-spacing="0.5">
+    HOSUR LOCAL COMMERCE
+  </text>
+
+  <!-- Main Title -->
+  <text x="80" y="240" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="76" font-weight="800" letter-spacing="-1">
+    SuperHosur
+  </text>
+
+  <!-- Subtitle -->
+  <text x="80" y="320" fill="#a7f3d0" font-family="system-ui, -apple-system, sans-serif" font-size="36" font-weight="600">
+    Commercial, Industrial &amp; Real Estate Marketplace
+  </text>
+
+  <!-- Value propositions -->
+  <text x="80" y="410" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="400" fill-opacity="0.9">
+    ✓ Verified Local Stores &amp; Industrial Suppliers
+  </text>
+  <text x="80" y="455" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="400" fill-opacity="0.9">
+    ✓ Real Estate for Sale, Rent &amp; Commercial Lease
+  </text>
+  <text x="80" y="500" fill="#e2e8f0" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="400" fill-opacity="0.9">
+    ✓ Direct Customer Quotes &amp; Telemetry
+  </text>
+
+  <!-- Domain Footer -->
+  <rect x="80" y="545" width="220" height="40" rx="8" fill="#ffffff" fill-opacity="0.15" />
+  <text x="100" y="571" fill="#ffffff" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="700">
+    superhosur.in
+  </text>
+</svg>

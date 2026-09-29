@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { BusinessGrid } from '../components/BusinessGrid'
 import { CategorySection } from '../components/CategorySection'
@@ -6,10 +6,13 @@ import { EmptyState } from '../components/EmptyState'
 import { Header } from '../components/Header'
 import { HeroSearch } from '../components/HeroSearch'
 import { LoadingState } from '../components/LoadingState'
-import { HosurMap } from '../components/HosurMap'
 import { getBusinesses, type BusinessSortOption, type BusinessSummary } from '../services/businesses'
 import { getCategories, type CategorySummary } from '../services/categories'
 import { getCities, type CityOption } from '../services/cities'
+
+const HosurMap = lazy(() => import('../components/HosurMap').then((m) => ({ default: m.HosurMap })))
+import { SEO } from '../components/SEO'
+import { buildWebSiteSchema } from '../utils/seo'
 
 export function HomePage() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -142,8 +145,36 @@ export function HomePage() {
     }
   }
 
+  const businessMapMarkers = useMemo(
+    () =>
+      businesses
+        .filter(
+          (b): b is typeof b & { latitude: number; longitude: number } =>
+            typeof b.latitude === 'number' && typeof b.longitude === 'number',
+        )
+        .map((b) => ({
+          id: b.id,
+          title: b.name,
+          type: 'business' as const,
+          latitude: b.latitude,
+          longitude: b.longitude,
+          subtitle: categories.find((c) => c.id === b.category_id)?.name || null,
+          address: b.address,
+          link: `/businesses/${b.slug || b.id}`,
+        })),
+    [businesses, categories],
+  )
+
+  const webSiteSchema = useMemo(() => buildWebSiteSchema(), [])
+
   return (
     <>
+      <SEO
+        title="SuperHosur — Hosur Local Commerce & Industrial Marketplace"
+        description="Discover verified businesses, industrial suppliers, commercial services, and real estate properties in Hosur, Tamil Nadu. Post requirements, compare quotes, and connect directly with trusted local vendors."
+        canonicalPath="/"
+        structuredData={webSiteSchema}
+      />
       <Header />
 
       <section className="page-section hero-section" aria-labelledby="home-title">
@@ -373,26 +404,14 @@ export function HomePage() {
           )}
 
           {!loading && !error && businesses.length > 0 && viewMode === 'map' && (
-            <HosurMap
-              markers={businesses
-                .filter(
-                  (b): b is typeof b & { latitude: number; longitude: number } =>
-                    typeof b.latitude === 'number' && typeof b.longitude === 'number',
-                )
-                .map((b) => ({
-                  id: b.id,
-                  title: b.name,
-                  type: 'business',
-                  latitude: b.latitude,
-                  longitude: b.longitude,
-                  subtitle: categories.find((c) => c.id === b.category_id)?.name || null,
-                  address: b.address,
-                  link: `/businesses/${b.slug || b.id}`,
-                }))}
-              height="520px"
-              title="Interactive Business Map — Hosur"
-              emptyMessage="No businesses in this search currently have GPS coordinates mapped. Explore Hosur regional map above."
-            />
+            <Suspense fallback={<LoadingState message="Loading interactive business map…" />}>
+              <HosurMap
+                markers={businessMapMarkers}
+                height="520px"
+                title="Interactive Business Map — Hosur"
+                emptyMessage="No businesses in this search currently have GPS coordinates mapped. Explore Hosur regional map above."
+              />
+            </Suspense>
           )}
 
           {!loading && !error && businesses.length > 0 && viewMode === 'grid' && (

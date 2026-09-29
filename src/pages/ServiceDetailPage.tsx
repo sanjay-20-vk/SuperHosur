@@ -3,6 +3,9 @@ import { Link, useParams } from 'react-router-dom'
 import { Header } from '../components/Header'
 import { LoadingState } from '../components/LoadingState'
 import { getCatalogServiceById, type CatalogServiceDetail } from '../services/supply'
+import { SEO } from '../components/SEO'
+import { ShareListingButton } from '../components/ShareListingButton'
+import { buildServiceSchema, getCanonicalUrl } from '../utils/seo'
 
 function formatServicePrice(service: CatalogServiceDetail): string {
   const from = service.price_from
@@ -79,6 +82,7 @@ export function ServiceDetailPage() {
   if (error || !service) {
     return (
       <>
+        <SEO title="Service Not Found | SuperHosur" noindex />
         <Header />
         <main className="page-main">
           <div className="state-panel error-state" role="alert">
@@ -106,8 +110,28 @@ export function ServiceDetailPage() {
       )}`
     : null
 
+  const structuredData = buildServiceSchema({
+    name: service.name,
+    description: service.description,
+    url: getCanonicalUrl(`/services/${service.id}`),
+    categoryName: category?.name || null,
+    providerName: business?.name || null,
+    providerUrl: business ? getCanonicalUrl(`/businesses/${business.id}`) : null,
+    priceFrom: service.price_from,
+    priceTo: service.price_to,
+  })
+
   return (
     <>
+      <SEO
+        title={`${service.name} | SuperHosur`}
+        description={
+          service.description?.trim() ||
+          `${service.name} offered by ${business?.name || 'verified provider'} in Hosur, Tamil Nadu.`
+        }
+        canonicalPath={`/services/${service.id}`}
+        structuredData={structuredData}
+      />
       <Header />
 
       <main className="page-main">
@@ -152,9 +176,17 @@ export function ServiceDetailPage() {
               </ol>
             </nav>
 
-            <Link to="/catalog" className="nav-link">
-              ← Back to Catalog
-            </Link>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <ShareListingButton
+                title={service.name}
+                text={service.description}
+                url={getCanonicalUrl(`/services/${service.id}`)}
+                variant="detail-action"
+              />
+              <Link to="/catalog" className="nav-link">
+                ← Back to Catalog
+              </Link>
+            </div>
           </div>
 
           <div style={{ marginTop: '20px' }}>

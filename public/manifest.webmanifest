@@ -1,0 +1,45 @@
+{
+  "name": "SuperHosur — Hosur Local Commerce & Industrial Marketplace",
+  "short_name": "SuperHosur",
+  "description": "Discover verified businesses, industrial suppliers, commercial services, and real estate properties in Hosur, Tamil Nadu. Post requirements, compare quotes, and connect directly with trusted local vendors.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "theme_color": "#17594d",
+  "background_color": "#f6f3ee",
+  "lang": "en-IN",
+  "categories": ["business", "shopping", "real-estate", "utilities"],
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

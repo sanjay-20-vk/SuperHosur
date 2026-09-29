@@ -9,6 +9,7 @@ import {
   type CatalogOffering,
   type OfferingType,
 } from '../services/supply'
+import { SEO } from '../components/SEO'
 
 function sanitizeSearchQuery(query: string): string {
   if (typeof query !== 'string') return ''
@@ -170,6 +171,11 @@ export function CatalogPage() {
 
   return (
     <>
+      <SEO
+        title="Products & Services Catalog | SuperHosur"
+        description="Explore industrial equipment, tools, raw materials, fabrication, and commercial services from verified Hosur businesses and manufacturers."
+        canonicalPath="/catalog"
+      />
       <Header />
 
       {/* 3. Catalog Page Hero */}

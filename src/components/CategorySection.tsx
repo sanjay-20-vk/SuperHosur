@@ -1,3 +1,5 @@
+import { memo } from 'react'
+
 export type CategorySummary = {
   id: string
   name: string
@@ -10,7 +12,7 @@ type CategorySectionProps = {
   onSelectCategory: (categoryId: string | null) => void
 }
 
-export function CategorySection({
+export const CategorySection = memo(function CategorySection({
   categories,
   selectedCategoryId,
   onSelectCategory,
@@ -56,4 +58,4 @@ export function CategorySection({
       </div>
     </section>
   )
-}
+})

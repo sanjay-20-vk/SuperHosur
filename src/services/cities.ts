@@ -5,18 +5,43 @@ export type CityOption = {
   name: string
 }
 
+let cachedCities: CityOption[] | null = null
+let pendingCitiesPromise: Promise<CityOption[]> | null = null
+
+export function clearCitiesCache(): void {
+  cachedCities = null
+  pendingCitiesPromise = null
+}
+
 export async function getCities(): Promise<CityOption[]> {
-  const supabase = getSupabaseClient()
-
-  const { data, error } = await supabase
-    .from('cities')
-    .select('id, name')
-    .eq('active', true)
-    .order('name')
-
-  if (error) {
-    throw error
+  if (cachedCities) {
+    return cachedCities
+  }
+  if (pendingCitiesPromise) {
+    return pendingCitiesPromise
   }
 
-  return (data ?? []) as CityOption[]
+  const supabase = getSupabaseClient()
+
+  pendingCitiesPromise = (async () => {
+    try {
+      const { data, error } = await supabase
+        .from('cities')
+        .select('id, name')
+        .eq('active', true)
+        .order('name')
+
+      if (error) {
+        throw error
+      }
+
+      cachedCities = (data ?? []) as CityOption[]
+      return cachedCities
+    } finally {
+      pendingCitiesPromise = null
+    }
+  })()
+
+  return pendingCitiesPromise
 }
+

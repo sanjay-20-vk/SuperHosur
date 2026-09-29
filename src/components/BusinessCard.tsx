@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import type { BusinessSummary } from '../services/businesses'
 import { SaveListingButton } from './SaveListingButton'
@@ -6,7 +7,7 @@ type BusinessCardProps = {
   business: BusinessSummary & { slug?: string }
 }
 
-export function BusinessCard({ business }: BusinessCardProps) {
+export const BusinessCard = memo(function BusinessCard({ business }: BusinessCardProps) {
   return (
     <Link to={`/businesses/${business.slug || business.id}`} className="business-card-link">
       <article className="business-card" aria-label={business.name}>
@@ -53,4 +54,4 @@ export function BusinessCard({ business }: BusinessCardProps) {
       </article>
     </Link>
   )
-}
+})

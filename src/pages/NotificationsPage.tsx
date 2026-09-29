@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Header } from '../components/Header'
+import { SEO } from '../components/SEO'
 import { useAuth } from '../hooks/useAuth'
 import {
   clearAllNotifications,
@@ -56,6 +57,8 @@ function getNotificationTypeMeta(
       return { icon: '📋', label: 'Quote Declined', badgeClass: 'notif-badge-rejected' }
     case 'quote_withdrawn':
       return { icon: '↩️', label: 'Quote Withdrawn', badgeClass: 'notif-badge-rejected' }
+    case 'quote_message':
+      return { icon: '💬', label: 'Discussion Message', badgeClass: 'notif-badge-quote' }
     case 'requirement_status':
       return { icon: '⚡', label: 'Requirement Update', badgeClass: 'notif-badge-status' }
     case 'new_lead':
@@ -253,6 +256,7 @@ export function NotificationsPage() {
 
   return (
     <>
+      <SEO title="Notifications | SuperHosur" noindex />
       <Header />
       <main className="page-section notif-page-container" aria-label="Notification Communication Center">
         {/* 1. Premium Page Header */}

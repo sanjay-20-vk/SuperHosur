@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import type { CatalogOffering } from '../services/supply'
 
@@ -35,7 +36,7 @@ function formatPrice(offering: CatalogOffering): string {
   return 'Price on request'
 }
 
-export function OfferingCard({ offering }: OfferingCardProps) {
+export const OfferingCard = memo(function OfferingCard({ offering }: OfferingCardProps) {
   const isProduct = offering.type === 'product'
   const detailLink = isProduct ? `/products/${offering.id}` : `/services/${offering.id}`
   const priceDisplay = formatPrice(offering)
@@ -105,5 +106,5 @@ export function OfferingCard({ offering }: OfferingCardProps) {
       </article>
     </Link>
   )
-}
+})
 

@@ -16,9 +16,24 @@ import {
   updateVendorLeadStatus,
   submitRequirementQuote,
   withdrawQuote,
+  type QuoteStatus,
   type RequirementMatchStatus,
+  type RequirementStatus,
   type VendorLeadRecord,
 } from '../services/requirements'
+import { QuoteDiscussionDrawer } from '../components/QuoteDiscussionDrawer'
+import {
+  getOwnerAnalytics,
+  type OwnerAnalyticsData,
+} from '../services/analytics'
+import {
+  getOwnerLeads,
+  type OwnerLeadRecord,
+} from '../services/ownerCrm'
+import { LeadInbox } from '../components/owner/LeadInbox'
+import { BillingSection } from '../components/owner/BillingSection'
+import { PromotionModal } from '../components/owner/PromotionModal'
+import { SEO } from '../components/SEO'
 
 type OwnerBusinessStatus = 'public' | 'pending' | 'rejected' | 'unpublished'
 
@@ -39,9 +54,9 @@ function getOwnerPropertyStatus(property: PropertySummary): OwnerPropertyStatus 
 }
 
 export function OwnerDashboardPage() {
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
-  const [selectedTab, setSelectedTab] = useState<'leads' | 'businesses' | 'properties' | null>(null)
+  const [selectedTab, setSelectedTab] = useState<'crm' | 'leads' | 'businesses' | 'properties' | 'analytics' | 'billing' | null>(null)
   const [lastTabParam, setLastTabParam] = useState(tabParam)
 
   if (tabParam !== lastTabParam) {
@@ -49,19 +64,29 @@ export function OwnerDashboardPage() {
     setSelectedTab(null)
   }
 
-  const activeTab: 'leads' | 'businesses' | 'properties' =
-    selectedTab ?? (tabParam === 'properties' ? 'properties' : tabParam === 'businesses' ? 'businesses' : 'leads')
+  const activeTab: 'crm' | 'leads' | 'businesses' | 'properties' | 'analytics' | 'billing' =
+    selectedTab ?? (tabParam === 'billing' ? 'billing' : tabParam === 'crm' ? 'crm' : tabParam === 'analytics' ? 'analytics' : tabParam === 'properties' ? 'properties' : tabParam === 'businesses' ? 'businesses' : 'leads')
   const setActiveTab = setSelectedTab
 
   const [loading, setLoading] = useState(true)
   const [businesses, setBusinesses] = useState<BusinessRecord[]>([])
   const [properties, setProperties] = useState<PropertySummary[]>([])
   const [leads, setLeads] = useState<VendorLeadRecord[]>([])
+  const [crmLeads, setCrmLeads] = useState<OwnerLeadRecord[]>([])
+  const [crmLoading, setCrmLoading] = useState(false)
+  const [crmError, setCrmError] = useState<string | null>(null)
   const [leadFilter, setLeadFilter] = useState<'all' | 'pending' | 'accepted' | 'dismissed'>('all')
   const [error, setError] = useState<string | null>(null)
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null)
   const [propertyActionLoadingId, setPropertyActionLoadingId] = useState<string | null>(null)
   const [leadActionLoadingId, setLeadActionLoadingId] = useState<string | null>(null)
+
+  // Promotion modal state
+  const [promotionTarget, setPromotionTarget] = useState<{
+    entityType: 'business' | 'property'
+    entityId: string
+    entityTitle: string
+  } | null>(null)
 
   const [quotingLeadId, setQuotingLeadId] = useState<string | null>(null)
   const [quoteAmount, setQuoteAmount] = useState('')
@@ -71,6 +96,43 @@ export function OwnerDashboardPage() {
   const [submittingQuote, setSubmittingQuote] = useState(false)
   const [withdrawingQuoteId, setWithdrawingQuoteId] = useState<string | null>(null)
   const [quoteError, setQuoteError] = useState<string | null>(null)
+
+  // Analytics tab state
+  const [analyticsData, setAnalyticsData] = useState<OwnerAnalyticsData | null>(null)
+  const [analyticsDays, setAnalyticsDays] = useState<number | null>(30)
+  const [analyticsLoading, setAnalyticsLoading] = useState(false)
+  const [analyticsError, setAnalyticsError] = useState<string | null>(null)
+
+  const [manualDiscussion, setManualDiscussion] = useState<{
+    requirementId: string
+    quoteId: string
+    requirementTitle: string
+    quoteAmount: number
+    quoteStatus: QuoteStatus
+    requirementStatus: RequirementStatus
+    otherPartyName: string
+    otherPartyRole: 'vendor' | 'customer'
+  } | null>(null)
+
+  let activeDiscussionFromParam = null
+  const quoteParam = searchParams.get('quoteId')
+  if (quoteParam && leads.length > 0) {
+    const matchLead = leads.find((l) => l.quote?.id === quoteParam)
+    if (matchLead && matchLead.quote) {
+      activeDiscussionFromParam = {
+        requirementId: matchLead.requirement_id,
+        quoteId: matchLead.quote.id,
+        requirementTitle: matchLead.requirement?.title ?? 'Customer Requirement',
+        quoteAmount: Number(matchLead.quote.quote_amount),
+        quoteStatus: matchLead.quote.status,
+        requirementStatus: matchLead.requirement?.status ?? 'open',
+        otherPartyName: matchLead.requirement?.customer?.full_name ?? 'Customer',
+        otherPartyRole: 'customer' as const,
+      }
+    }
+  }
+
+  const activeDiscussion = manualDiscussion ?? activeDiscussionFromParam
 
   async function refreshData() {
     try {
@@ -83,14 +145,16 @@ export function OwnerDashboardPage() {
         return
       }
 
-      const [bizData, propData, leadData] = await Promise.all([
+      const [bizData, propData, leadData, crmData] = await Promise.all([
         getMyBusinesses(),
         getMyProperties(session.user.id),
         getVendorLeads(),
+        getOwnerLeads().catch(() => []),
       ])
       setBusinesses(bizData)
       setProperties(propData)
       setLeads(leadData)
+      setCrmLeads(crmData)
     } catch (loadError) {
       const message =
         loadError instanceof Error ? loadError.message : 'Unable to load your listings and leads.'
@@ -115,15 +179,17 @@ export function OwnerDashboardPage() {
           return
         }
 
-        const [bizData, propData, leadData] = await Promise.all([
+        const [bizData, propData, leadData, crmData] = await Promise.all([
           getMyBusinesses(),
           getMyProperties(session.user.id),
           getVendorLeads(),
+          getOwnerLeads().catch(() => []),
         ])
         if (active) {
           setBusinesses(bizData)
           setProperties(propData)
           setLeads(leadData)
+          setCrmLeads(crmData)
         }
       } catch (loadError) {
         if (active) {
@@ -143,6 +209,35 @@ export function OwnerDashboardPage() {
       active = false
     }
   }, [])
+
+  useEffect(() => {
+    if (activeTab !== 'analytics') return
+
+    let active = true
+    async function loadAnalytics() {
+      try {
+        setAnalyticsLoading(true)
+        setAnalyticsError(null)
+        const data = await getOwnerAnalytics(analyticsDays)
+        if (active) {
+          setAnalyticsData(data)
+        }
+      } catch (err) {
+        if (active) {
+          setAnalyticsError(err instanceof Error ? err.message : 'Unable to load analytics.')
+        }
+      } finally {
+        if (active) {
+          setAnalyticsLoading(false)
+        }
+      }
+    }
+
+    void loadAnalytics()
+    return () => {
+      active = false
+    }
+  }, [activeTab, analyticsDays])
 
   async function handleDeleteBusiness(businessId: string) {
     if (!window.confirm('Delete this business listing?')) {
@@ -291,6 +386,7 @@ export function OwnerDashboardPage() {
 
   return (
     <section className="page-section owner-dashboard owner-dash-layout" aria-label="Vendor Leads and Listings Dashboard">
+      <SEO title="Owner Dashboard | SuperHosur" noindex />
       {/* Premium Dashboard Header */}
       <header className="dashboard-header owner-header-banner">
         <div className="owner-header-content">
@@ -434,11 +530,25 @@ export function OwnerDashboardPage() {
             <button
               type="button"
               role="tab"
+              aria-selected={activeTab === 'crm'}
+              className={`owner-tab-btn category-pill ${activeTab === 'crm' ? 'active' : ''}`}
+              onClick={() => setActiveTab('crm')}
+            >
+              <span>🎯 CRM Leads</span>
+              <span className="owner-tab-badge">
+                {crmLeads.filter((l) => l.status === 'new').length > 0 ? `${crmLeads.filter((l) => l.status === 'new').length} new / ` : ''}
+                {crmLeads.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              role="tab"
               aria-selected={activeTab === 'leads'}
               className={`owner-tab-btn category-pill ${activeTab === 'leads' ? 'active' : ''}`}
               onClick={() => setActiveTab('leads')}
             >
-              <span>Customer Leads</span>
+              <span>Quote Requests</span>
               <span className="owner-tab-badge">
                 {pendingLeads.length > 0 ? `${pendingLeads.length} new / ` : ''}
                 {leads.length}
@@ -466,7 +576,50 @@ export function OwnerDashboardPage() {
               <span>My Properties</span>
               <span className="owner-tab-badge">{properties.length}</span>
             </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'analytics'}
+              className={`owner-tab-btn category-pill ${activeTab === 'analytics' ? 'active' : ''}`}
+              onClick={() => setActiveTab('analytics')}
+            >
+              <span>📊 Analytics &amp; Leads</span>
+            </button>
+
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeTab === 'billing'}
+              className={`owner-tab-btn category-pill ${activeTab === 'billing' ? 'active' : ''}`}
+              onClick={() => setActiveTab('billing')}
+            >
+              <span>💳 Billing &amp; Spotlight</span>
+            </button>
           </nav>
+
+          {/* TAB 0: CRM UNIFIED LEAD INBOX */}
+          {activeTab === 'crm' && (
+            <div style={{ marginBottom: '48px' }}>
+              <LeadInbox
+                leads={crmLeads}
+                loading={crmLoading}
+                error={crmError}
+                onRefresh={async () => {
+                  setCrmLoading(true)
+                  setCrmError(null)
+                  try {
+                    const fresh = await getOwnerLeads()
+                    setCrmLeads(fresh)
+                  } catch (err) {
+                    setCrmError(err instanceof Error ? err.message : 'Unable to refresh CRM leads.')
+                  } finally {
+                    setCrmLoading(false)
+                  }
+                }}
+              />
+            </div>
+          )}
 
           {/* TAB 1: CUSTOMER LEADS & OPPORTUNITIES */}
           {activeTab === 'leads' && (
@@ -776,39 +929,70 @@ export function OwnerDashboardPage() {
                                     </p>
                                   )}
 
-                                  {lead.quote.status === 'submitted' && (
-                                    <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
-                                      {req?.status !== 'closed' &&
-                                      req?.status !== 'completed' &&
-                                      req?.status !== 'cancelled' &&
-                                      req?.status !== 'expired' ? (
+                                  <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginTop: '10px', flexWrap: 'wrap' }}>
+                                    <button
+                                      type="button"
+                                      className="text-action"
+                                      style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '5px',
+                                        fontSize: '0.85rem',
+                                        fontWeight: 700,
+                                        color: 'var(--color-primary, #17594d)',
+                                        cursor: 'pointer',
+                                      }}
+                                      onClick={() =>
+                                        setManualDiscussion({
+                                          requirementId: lead.requirement_id,
+                                          quoteId: lead.quote!.id,
+                                          requirementTitle: req?.title ?? 'Customer Requirement',
+                                          quoteAmount: Number(lead.quote!.quote_amount),
+                                          quoteStatus: lead.quote!.status,
+                                          requirementStatus: req?.status ?? 'open',
+                                          otherPartyName: req?.customer?.full_name ?? 'Customer',
+                                          otherPartyRole: 'customer',
+                                        })
+                                      }
+                                      aria-label={`Open discussion with customer ${req?.customer?.full_name ?? ''}`}
+                                    >
+                                      💬 Discussion Thread
+                                    </button>
+
+                                    {lead.quote.status === 'submitted' && (
+                                      <>
+                                        {req?.status !== 'closed' &&
+                                        req?.status !== 'completed' &&
+                                        req?.status !== 'cancelled' &&
+                                        req?.status !== 'expired' ? (
+                                          <button
+                                            type="button"
+                                            className="text-action"
+                                            style={{ fontSize: '0.85rem' }}
+                                            onClick={() => handleOpenQuoteModal(lead)}
+                                            aria-label="Edit submitted quotation"
+                                          >
+                                            ✏️ Edit Quotation
+                                          </button>
+                                        ) : (
+                                          <span style={{ fontSize: '0.82rem', color: '#b91c1c' }}>
+                                            ⚠️ Requirement is {req?.status}; editing quotation is locked.
+                                          </span>
+                                        )}
+
                                         <button
                                           type="button"
                                           className="text-action"
-                                          style={{ fontSize: '0.85rem' }}
-                                          onClick={() => handleOpenQuoteModal(lead)}
-                                          aria-label="Edit submitted quotation"
+                                          style={{ fontSize: '0.85rem', color: '#b91c1c' }}
+                                          onClick={() => handleWithdrawQuote(lead)}
+                                          disabled={withdrawingQuoteId === lead.quote.id}
+                                          aria-label="Withdraw this quotation"
                                         >
-                                          ✏️ Edit Quotation
+                                          {withdrawingQuoteId === lead.quote.id ? 'Withdrawing…' : '↩️ Withdraw Quote'}
                                         </button>
-                                      ) : (
-                                        <span style={{ fontSize: '0.82rem', color: '#b91c1c' }}>
-                                          ⚠️ Requirement is {req?.status}; editing quotation is locked.
-                                        </span>
-                                      )}
-
-                                      <button
-                                        type="button"
-                                        className="text-action"
-                                        style={{ fontSize: '0.85rem', color: '#b91c1c' }}
-                                        onClick={() => handleWithdrawQuote(lead)}
-                                        disabled={withdrawingQuoteId === lead.quote.id}
-                                        aria-label="Withdraw this quotation"
-                                      >
-                                        {withdrawingQuoteId === lead.quote.id ? 'Withdrawing…' : '↩️ Withdraw Quote'}
-                                      </button>
-                                    </div>
-                                  )}
+                                      </>
+                                    )}
+                                  </div>
                                 </div>
                               ) : req?.status === 'closed' ||
                                 req?.status === 'completed' ||
@@ -1167,6 +1351,21 @@ export function OwnerDashboardPage() {
 
                           {/* Preserved Business Action Buttons (View fixed with slug) */}
                           <div className="owner-business-actions">
+                            <button
+                              type="button"
+                              className="owner-action-btn"
+                              style={{ borderColor: '#17594d', color: '#17594d', fontWeight: 600 }}
+                              onClick={() =>
+                                setPromotionTarget({
+                                  entityType: 'business',
+                                  entityId: business.id,
+                                  entityTitle: business.name,
+                                })
+                              }
+                              aria-label={`Promote ${business.name}`}
+                            >
+                              🚀 Promote
+                            </button>
                             <Link
                               to={`/owner/businesses/${business.id}/edit`}
                               className="owner-action-btn owner-action-btn--primary"
@@ -1412,6 +1611,21 @@ export function OwnerDashboardPage() {
 
                           {/* Action Buttons */}
                           <div className="owner-business-actions">
+                            <button
+                              type="button"
+                              className="owner-action-btn"
+                              style={{ borderColor: '#17594d', color: '#17594d', fontWeight: 600 }}
+                              onClick={() =>
+                                setPromotionTarget({
+                                  entityType: 'property',
+                                  entityId: property.id,
+                                  entityTitle: property.title,
+                                })
+                              }
+                              aria-label={`Promote ${property.title}`}
+                            >
+                              🚀 Promote
+                            </button>
                             <Link
                               to={`/owner/properties/${property.id}/edit`}
                               className={`owner-action-btn ${isRejected ? 'owner-action-btn--primary' : ''}`}
@@ -1451,7 +1665,246 @@ export function OwnerDashboardPage() {
               )}
             </div>
           )}
+
+          {/* TAB 4: PERFORMANCE & OWNER ANALYTICS */}
+          {activeTab === 'analytics' && (
+            <div style={{ marginBottom: '48px' }}>
+              <div className="section-header owner-section-bar">
+                <div className="owner-section-title-wrap">
+                  <p className="eyebrow">Listing Performance &amp; Engagement</p>
+                  <h2>Owner Analytics &amp; Lead Telemetry</h2>
+                  <p>
+                    Understand how Hosur residents and businesses are discovering, contacting, and bookmarking your listings.
+                  </p>
+                </div>
+
+                {/* Date range filter pills */}
+                <div className="owner-filter-group" role="group" aria-label="Filter analytics date range">
+                  <button
+                    type="button"
+                    className={analyticsDays === 7 ? 'category-pill active' : 'category-pill'}
+                    onClick={() => setAnalyticsDays(7)}
+                    aria-pressed={analyticsDays === 7}
+                  >
+                    Last 7 days
+                  </button>
+                  <button
+                    type="button"
+                    className={analyticsDays === 30 ? 'category-pill active' : 'category-pill'}
+                    onClick={() => setAnalyticsDays(30)}
+                    aria-pressed={analyticsDays === 30}
+                  >
+                    Last 30 days
+                  </button>
+                  <button
+                    type="button"
+                    className={analyticsDays === null ? 'category-pill active' : 'category-pill'}
+                    onClick={() => setAnalyticsDays(null)}
+                    aria-pressed={analyticsDays === null}
+                  >
+                    All time
+                  </button>
+                </div>
+              </div>
+
+              {analyticsLoading && (
+                <div className="req-skeleton-list" aria-busy="true" aria-live="polite">
+                  <div className="owner-metrics-grid">
+                    {[1, 2, 3, 4, 5, 6].map((i) => (
+                      <div key={i} className="req-skeleton-card" style={{ height: '110px' }}>
+                        <div className="req-skeleton-line" style={{ width: '40%', height: '14px' }}></div>
+                        <div className="req-skeleton-line" style={{ width: '30%', height: '32px' }}></div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!analyticsLoading && analyticsError && (
+                <div className="state-panel error-state" role="alert">
+                  <h3>Unable to load analytics</h3>
+                  <p>{analyticsError}</p>
+                </div>
+              )}
+
+              {!analyticsLoading && !analyticsError && analyticsData && (
+                <>
+                  {/* KPI SUMMARY METRICS */}
+                  <div className="owner-analytics-kpi-grid" aria-label="Key Performance Indicators">
+                    <div className="owner-metric-card owner-metric-card--interactive">
+                      <div className="owner-metric-top">
+                        <span className="owner-metric-label">Listing Views</span>
+                        <span className="owner-metric-icon" aria-hidden="true">👁️</span>
+                      </div>
+                      <span className="owner-metric-value">{analyticsData.summary.total_views}</span>
+                      <span className="owner-metric-subtext">Unique browsing sessions</span>
+                    </div>
+
+                    <div className="owner-metric-card owner-metric-card--interactive">
+                      <div className="owner-metric-top">
+                        <span className="owner-metric-label">Phone Inquiries</span>
+                        <span className="owner-metric-icon" aria-hidden="true">📞</span>
+                      </div>
+                      <span className="owner-metric-value">{analyticsData.summary.total_call_clicks}</span>
+                      <span className="owner-metric-subtext">Direct dial clicks</span>
+                    </div>
+
+                    <div className="owner-metric-card owner-metric-card--interactive">
+                      <div className="owner-metric-top">
+                        <span className="owner-metric-label">WhatsApp Chats</span>
+                        <span className="owner-metric-icon" aria-hidden="true">💬</span>
+                      </div>
+                      <span className="owner-metric-value">{analyticsData.summary.total_whatsapp_clicks}</span>
+                      <span className="owner-metric-subtext">Direct chat initiations</span>
+                    </div>
+
+                    <div className="owner-metric-card owner-metric-card--interactive">
+                      <div className="owner-metric-top">
+                        <span className="owner-metric-label">Saved to Favorites</span>
+                        <span className="owner-metric-icon" aria-hidden="true">❤️</span>
+                      </div>
+                      <span className="owner-metric-value">{analyticsData.summary.total_saved_listings}</span>
+                      <span className="owner-metric-subtext">Bookmarked by buyers</span>
+                    </div>
+
+                    <div className="owner-metric-card owner-metric-card--interactive">
+                      <div className="owner-metric-top">
+                        <span className="owner-metric-label">Quotes Submitted</span>
+                        <span className="owner-metric-icon" aria-hidden="true">📝</span>
+                      </div>
+                      <span className="owner-metric-value">{analyticsData.summary.total_quotes_submitted}</span>
+                      <span className="owner-metric-subtext">Outbound proposals</span>
+                    </div>
+
+                    <div className="owner-metric-card owner-metric-card--interactive">
+                      <div className="owner-metric-top">
+                        <span className="owner-metric-label">Quotes Accepted</span>
+                        <span className="owner-metric-icon" aria-hidden="true">🤝</span>
+                      </div>
+                      <span className="owner-metric-value">{analyticsData.summary.total_quotes_accepted}</span>
+                      <span className="owner-metric-subtext">Won customer contracts</span>
+                    </div>
+
+                    <div className="owner-metric-card owner-metric-card--interactive owner-metric-card--highlight">
+                      <div className="owner-metric-top">
+                        <span className="owner-metric-label">Quote Win Rate</span>
+                        <span className="owner-metric-icon" aria-hidden="true">📈</span>
+                      </div>
+                      <span className="owner-metric-value">{analyticsData.summary.conversion_rate}%</span>
+                      <span className="owner-metric-subtext">Conversion from proposal to deal</span>
+                    </div>
+                  </div>
+
+                  {/* PER-LISTING BREAKDOWN */}
+                  <div className="owner-analytics-section" style={{ marginTop: '36px' }}>
+                    <div className="owner-analytics-section-header">
+                      <h3 style={{ margin: '0 0 4px', fontSize: '1.25rem', fontWeight: 800 }}>
+                        Per-Listing Breakdown
+                      </h3>
+                      <p style={{ margin: 0, color: 'var(--color-text-muted)', fontSize: '0.9rem' }}>
+                        Detailed performance statistics across each of your commercial profiles and real estate listings.
+                      </p>
+                    </div>
+
+                    {analyticsData.listings.length === 0 ? (
+                      <div className="state-panel" style={{ marginTop: '16px', textAlign: 'center' }}>
+                        <p>No listings found. Create a business or property listing to begin tracking engagement.</p>
+                      </div>
+                    ) : (
+                      <div className="owner-analytics-table-wrap">
+                        <table className="owner-analytics-table">
+                          <thead>
+                            <tr>
+                              <th>Listing</th>
+                              <th>Type</th>
+                              <th style={{ textAlign: 'right' }}>Views</th>
+                              <th style={{ textAlign: 'right' }}>Calls</th>
+                              <th style={{ textAlign: 'right' }}>WhatsApp</th>
+                              <th style={{ textAlign: 'right' }}>Saves</th>
+                              <th style={{ textAlign: 'right' }}>Quotes</th>
+                              <th style={{ textAlign: 'right' }}>Win Rate</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {analyticsData.listings.map((l) => (
+                              <tr key={l.id}>
+                                <td>
+                                  <Link
+                                    to={l.entity_type === 'business' ? `/businesses/${l.id}` : `/properties/${l.id}`}
+                                    className="owner-analytics-listing-link"
+                                  >
+                                    {l.title}
+                                  </Link>
+                                </td>
+                                <td>
+                                  <span className={`owner-analytics-type-pill ${l.entity_type}`}>
+                                    {l.entity_type === 'business' ? 'Business' : 'Property'}
+                                  </span>
+                                </td>
+                                <td style={{ textAlign: 'right' }}>{l.views}</td>
+                                <td style={{ textAlign: 'right' }}>{l.calls}</td>
+                                <td style={{ textAlign: 'right' }}>{l.whatsapps}</td>
+                                <td style={{ textAlign: 'right' }}>{l.saves}</td>
+                                <td style={{ textAlign: 'right' }}>
+                                  {l.quotes_submitted > 0 ? `${l.quotes_accepted}/${l.quotes_submitted}` : '—'}
+                                </td>
+                                <td style={{ textAlign: 'right' }}>
+                                  {l.quotes_submitted > 0 ? `${l.conversion_rate}%` : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* TAB 5: BILLING & SPOTLIGHT */}
+          {activeTab === 'billing' && (
+            <div style={{ marginBottom: '48px' }}>
+              <BillingSection />
+            </div>
+          )}
         </>
+      )}
+
+      {promotionTarget && (
+        <PromotionModal
+          isOpen={Boolean(promotionTarget)}
+          onClose={() => setPromotionTarget(null)}
+          onSuccess={() => {
+            void refreshData()
+          }}
+          entityType={promotionTarget.entityType}
+          entityId={promotionTarget.entityId}
+          entityTitle={promotionTarget.entityTitle}
+        />
+      )}
+
+      {activeDiscussion && (
+        <QuoteDiscussionDrawer
+          isOpen={Boolean(activeDiscussion)}
+          onClose={() => {
+            setManualDiscussion(null)
+            if (searchParams.has('quoteId')) {
+              const next = new URLSearchParams(searchParams)
+              next.delete('quoteId')
+              setSearchParams(next, { replace: true })
+            }
+          }}
+          requirementId={activeDiscussion.requirementId}
+          quoteId={activeDiscussion.quoteId}
+          requirementTitle={activeDiscussion.requirementTitle}
+          quoteAmount={activeDiscussion.quoteAmount}
+          quoteStatus={activeDiscussion.quoteStatus}
+          requirementStatus={activeDiscussion.requirementStatus}
+          otherPartyName={activeDiscussion.otherPartyName}
+          otherPartyRole={activeDiscussion.otherPartyRole}
+        />
       )}
     </section>
   )

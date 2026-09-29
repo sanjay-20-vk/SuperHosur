@@ -22,6 +22,7 @@ const MyRequirementsPage = lazy(() => import('../pages/MyRequirementsPage').then
 const ProfilePage = lazy(() => import('../pages/ProfilePage').then((m) => ({ default: m.ProfilePage })))
 const NotificationsPage = lazy(() => import('../pages/NotificationsPage').then((m) => ({ default: m.NotificationsPage })))
 const SavedListingsPage = lazy(() => import('../pages/SavedListingsPage').then((m) => ({ default: m.SavedListingsPage })))
+const MessagesInboxPage = lazy(() => import('../pages/MessagesInboxPage').then((m) => ({ default: m.MessagesInboxPage })))
 
 type RouteConfig = {
   path: string
@@ -109,6 +110,30 @@ const routes: RouteConfig[] = [
     element: (
       <AdminRoute>
         <AdminBusinessesPage initialTab="users" />
+      </AdminRoute>
+    ),
+  },
+  {
+    path: '/admin/audit-log',
+    element: (
+      <AdminRoute>
+        <AdminBusinessesPage initialTab="audit-log" />
+      </AdminRoute>
+    ),
+  },
+  {
+    path: '/admin/reports',
+    element: (
+      <AdminRoute>
+        <AdminBusinessesPage initialTab="reports" />
+      </AdminRoute>
+    ),
+  },
+  {
+    path: '/admin/health',
+    element: (
+      <AdminRoute>
+        <AdminBusinessesPage initialTab="health" />
       </AdminRoute>
     ),
   },
@@ -237,6 +262,14 @@ const routes: RouteConfig[] = [
     element: (
       <ProtectedRoute>
         <ProfilePage />
+      </ProtectedRoute>
+    ),
+  },
+  {
+    path: '/messages',
+    element: (
+      <ProtectedRoute>
+        <MessagesInboxPage />
       </ProtectedRoute>
     ),
   },

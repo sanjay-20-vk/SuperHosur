@@ -1,4 +1,5 @@
 import { getSupabaseClient } from '../lib/supabase'
+import { getCategories } from './categories'
 import { attachApprovedCoverPhotos } from './photos'
 
 export type BusinessSummary = {
@@ -299,6 +300,7 @@ export async function getMyBusinesses(): Promise<BusinessRecord[]> {
     .from('businesses')
     .select('*')
     .order('created_at', { ascending: false })
+    .limit(100)
 
   if (error) {
     throw error
@@ -315,6 +317,7 @@ export async function getAdminBusinesses(): Promise<BusinessRecord[]> {
     .select('*')
     .order('verified', { ascending: true })
     .order('created_at', { ascending: false })
+    .limit(200)
 
   if (error) {
     throw error
@@ -353,19 +356,8 @@ export async function getBusinessBySlug(slug: string): Promise<BusinessRecord> {
 }
 
 export async function getCategoriesForBusinessForm(): Promise<{ id: string; name: string }[]> {
-  const supabase = getSupabaseClient()
-
-  const { data, error } = await supabase
-    .from('categories')
-    .select('id, name')
-    .eq('active', true)
-    .order('name')
-
-  if (error) {
-    throw error
-  }
-
-  return (data ?? []) as { id: string; name: string }[]
+  const categories = await getCategories()
+  return categories.map((c) => ({ id: c.id, name: c.name }))
 }
 
 export async function createBusiness(input: BusinessCreateInput): Promise<void> {
@@ -588,3 +580,52 @@ export async function deleteBusiness(businessId: string): Promise<void> {
     throw error
   }
 }
+
+export type BulkModerationAction = 'approve' | 'reject' | 'suspend' | 'restore'
+
+export type BulkModerationItemResult = {
+  id: string
+  title: string
+  success: boolean
+  action?: string
+  error?: string
+}
+
+export type BulkModerationResponse = {
+  total_selected: number
+  succeeded_count: number
+  failed_count: number
+  results: BulkModerationItemResult[]
+}
+
+export async function bulkModerateBusinesses(
+  businessIds: string[],
+  action: BulkModerationAction,
+  reason?: string,
+): Promise<BulkModerationResponse> {
+  const uniqueIds = Array.from(new Set(businessIds.filter((id) => Boolean(id?.trim()))))
+  if (uniqueIds.length === 0) {
+    throw new Error('Please select at least one business to moderate.')
+  }
+
+  if (action === 'reject') {
+    const trimmedReason = reason?.trim() ?? ''
+    if (trimmedReason.length < 5) {
+      throw new Error('A rejection reason of at least 5 characters is required for bulk rejection.')
+    }
+  }
+
+  const supabase = getSupabaseClient()
+  const { data, error } = await supabase.rpc('admin_bulk_moderate_businesses', {
+    p_business_ids: uniqueIds,
+    p_action: action,
+    p_reason: reason?.trim() || null,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return data as BulkModerationResponse
+}
+

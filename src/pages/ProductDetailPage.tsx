@@ -3,6 +3,9 @@ import { Link, useParams } from 'react-router-dom'
 import { Header } from '../components/Header'
 import { LoadingState } from '../components/LoadingState'
 import { getCatalogProductById, type CatalogProductDetail } from '../services/supply'
+import { SEO } from '../components/SEO'
+import { ShareListingButton } from '../components/ShareListingButton'
+import { buildProductSchema, getCanonicalUrl } from '../utils/seo'
 
 export function ProductDetailPage() {
   const { productId } = useParams()
@@ -56,6 +59,7 @@ export function ProductDetailPage() {
   if (error || !product) {
     return (
       <>
+        <SEO title="Product Not Found | SuperHosur" noindex />
         <Header />
         <main className="page-main">
           <div className="state-panel error-state" role="alert">
@@ -96,8 +100,28 @@ export function ProductDetailPage() {
       ? '#d97706'
       : '#dc2626'
 
+  const structuredData = buildProductSchema({
+    name: product.name,
+    description: product.description,
+    url: getCanonicalUrl(`/products/${product.id}`),
+    price: product.price,
+    categoryName: category?.name || null,
+    sellerName: business?.name || null,
+    sellerUrl: business ? getCanonicalUrl(`/businesses/${business.id}`) : null,
+    availability: product.availability,
+  })
+
   return (
     <>
+      <SEO
+        title={`${product.name} | SuperHosur`}
+        description={
+          product.description?.trim() ||
+          `${product.name} available from ${business?.name || 'verified supplier'} in Hosur, Tamil Nadu.`
+        }
+        canonicalPath={`/products/${product.id}`}
+        structuredData={structuredData}
+      />
       <Header />
 
       <main className="page-main">
@@ -142,9 +166,17 @@ export function ProductDetailPage() {
               </ol>
             </nav>
 
-            <Link to="/catalog" className="nav-link">
-              ← Back to Catalog
-            </Link>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+              <ShareListingButton
+                title={product.name}
+                text={product.description}
+                url={getCanonicalUrl(`/products/${product.id}`)}
+                variant="detail-action"
+              />
+              <Link to="/catalog" className="nav-link">
+                ← Back to Catalog
+              </Link>
+            </div>
           </div>
 
           <div style={{ marginTop: '20px' }}>

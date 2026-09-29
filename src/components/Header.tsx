@@ -62,6 +62,9 @@ export function Header() {
               <Link to="/saved" className="nav-link">
                 Saved
               </Link>
+              <Link to="/messages" className="nav-link">
+                Messages
+              </Link>
               <Link to="/my-requirements" className="nav-link">
                 My requirements
               </Link>
@@ -153,6 +156,10 @@ export function Header() {
                 <Link to="/saved" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>
                   <span className="mobile-nav-icon" aria-hidden="true">❤️</span>
                   <span>Saved Listings &amp; Favorites</span>
+                </Link>
+                <Link to="/messages" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>
+                  <span className="mobile-nav-icon" aria-hidden="true">💬</span>
+                  <span>Messages &amp; Inquiries</span>
                 </Link>
                 <Link to="/my-requirements" className="mobile-nav-link" onClick={() => setMobileMenuOpen(false)}>
                   <span className="mobile-nav-icon" aria-hidden="true">📋</span>

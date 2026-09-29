@@ -1,4 +1,4 @@
-import { useEffect, useState, type MouseEvent } from 'react'
+import { memo, useEffect, useState, type MouseEvent } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../hooks/useAuth'
 import {
@@ -21,7 +21,7 @@ export type SaveListingButtonProps = {
   className?: string
 }
 
-export function SaveListingButton({
+export const SaveListingButton = memo(function SaveListingButton({
   targetType,
   targetId,
   title,
@@ -211,4 +211,4 @@ export function SaveListingButton({
       </svg>
     </button>
   )
-}
+})

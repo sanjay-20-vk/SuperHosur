@@ -148,6 +148,17 @@ export function getPropertyErrorMessage(error: unknown, fallback = 'Unable to sa
   return fallback
 }
 
+type CachedPropertyPhotoUrl = {
+  url: string
+  expiresAt: number
+}
+
+const signedPropertyPhotoUrlCache = new Map<string, CachedPropertyPhotoUrl>()
+
+export function clearPropertyPhotoUrlCache(): void {
+  signedPropertyPhotoUrlCache.clear()
+}
+
 export async function getSignedPropertyPhotoUrlMap(paths: string[]): Promise<Map<string, string>> {
   const uniquePaths = Array.from(new Set(paths.filter((path) => path.trim().length > 0)))
   const urls = new Map<string, string>()
@@ -156,18 +167,38 @@ export async function getSignedPropertyPhotoUrlMap(paths: string[]): Promise<Map
     return urls
   }
 
+  const now = Date.now()
+  const pathsToFetch: string[] = []
+
+  for (const path of uniquePaths) {
+    const cached = signedPropertyPhotoUrlCache.get(path)
+    // Retain 5 minutes validity safety buffer before expiry
+    if (cached && cached.expiresAt > now + 5 * 60 * 1000) {
+      urls.set(path, cached.url)
+    } else {
+      pathsToFetch.push(path)
+    }
+  }
+
+  if (pathsToFetch.length === 0) {
+    return urls
+  }
+
   const { data, error } = await getSupabaseClient()
     .storage
     .from(PROPERTY_PHOTOS_BUCKET)
-    .createSignedUrls(uniquePaths, SIGNED_URL_EXPIRES_IN)
+    .createSignedUrls(pathsToFetch, SIGNED_URL_EXPIRES_IN)
 
   if (error) {
     throw error
   }
 
+  const expiresAt = now + SIGNED_URL_EXPIRES_IN * 1000
+
   for (const item of data ?? []) {
     if (item.path && item.signedUrl) {
       urls.set(item.path, item.signedUrl)
+      signedPropertyPhotoUrlCache.set(item.path, { url: item.signedUrl, expiresAt })
     }
   }
 
@@ -729,3 +760,45 @@ export async function updatePropertyPhotoModeration(
     throw error
   }
 }
+
+export async function bulkModerateProperties(
+  propertyIds: string[],
+  action: 'approve' | 'reject' | 'suspend' | 'restore',
+  reason?: string,
+): Promise<{
+  total_selected: number
+  succeeded_count: number
+  failed_count: number
+  results: { id: string; title: string; success: boolean; action?: string; error?: string }[]
+}> {
+  const uniqueIds = Array.from(new Set(propertyIds.filter((id) => Boolean(id?.trim()))))
+  if (uniqueIds.length === 0) {
+    throw new Error('Please select at least one property to moderate.')
+  }
+
+  if (action === 'reject') {
+    const trimmedReason = reason?.trim() ?? ''
+    if (trimmedReason.length < 5) {
+      throw new Error('A rejection reason of at least 5 characters is required for bulk rejection.')
+    }
+  }
+
+  const supabase = getSupabaseClient()
+  const { data, error } = await supabase.rpc('admin_bulk_moderate_properties', {
+    p_property_ids: uniqueIds,
+    p_action: action,
+    p_reason: reason?.trim() || null,
+  })
+
+  if (error) {
+    throw error
+  }
+
+  return data as {
+    total_selected: number
+    succeeded_count: number
+    failed_count: number
+    results: { id: string; title: string; success: boolean; action?: string; error?: string }[]
+  }
+}
+

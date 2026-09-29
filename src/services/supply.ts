@@ -244,6 +244,7 @@ export type CatalogFilterOptions = {
   subcategoryId?: string | null
   availability?: 'all' | 'available' | 'limited'
   sortBy?: 'newest' | 'price_asc' | 'price_desc' | 'name'
+  limit?: number
 }
 
 export async function getCatalogOfferings(
@@ -251,6 +252,7 @@ export async function getCatalogOfferings(
 ): Promise<CatalogOffering[]> {
   const supabase = getSupabaseClient()
   const { search, type = 'all', categoryId, subcategoryId, availability, sortBy = 'newest' } = filters
+  const queryLimit = filters.limit ?? 80
   const offerings: CatalogOffering[] = []
 
   const includeProducts = type === 'all' || type === 'product'
@@ -315,6 +317,8 @@ export async function getCatalogOfferings(
         }
 
         const { data, error } = await productQuery
+          .order('created_at', { ascending: false })
+          .limit(queryLimit)
         if (error) throw error
 
         if (data) {
@@ -396,6 +400,8 @@ export async function getCatalogOfferings(
         }
 
         const { data, error } = await serviceQuery
+          .order('created_at', { ascending: false })
+          .limit(queryLimit)
         if (error) throw error
 
         if (data) {

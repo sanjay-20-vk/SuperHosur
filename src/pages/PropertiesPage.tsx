@@ -1,10 +1,9 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
 import { Header } from '../components/Header'
 import { LoadingState } from '../components/LoadingState'
 import { EmptyState } from '../components/EmptyState'
 import { PropertyCard } from '../components/PropertyCard'
-import { HosurMap } from '../components/HosurMap'
 import { getCities, type CityOption } from '../services/cities'
 import {
   getPublicProperties,
@@ -13,6 +12,9 @@ import {
   type PropertySummary,
   type PropertyType,
 } from '../services/properties'
+
+const HosurMap = lazy(() => import('../components/HosurMap').then((m) => ({ default: m.HosurMap })))
+import { SEO } from '../components/SEO'
 
 const LISTING_TYPE_OPTIONS: { label: string; value: ListingType | 'all' }[] = [
   { label: 'All Listings', value: 'all' },
@@ -161,8 +163,38 @@ export function PropertiesPage() {
     setSelectedSort('newest')
   }
 
+  const propertyMapMarkers = useMemo(
+    () =>
+      properties
+        .filter(
+          (p): p is typeof p & { latitude: number; longitude: number } =>
+            typeof p.latitude === 'number' && typeof p.longitude === 'number',
+        )
+        .map((p) => ({
+          id: p.id,
+          title: p.title,
+          type: 'property' as const,
+          latitude: p.latitude,
+          longitude: p.longitude,
+          subtitle: `${p.property_type.toUpperCase()} • ${p.listing_type.toUpperCase()}`,
+          address: [p.address, p.cities?.name].filter(Boolean).join(', ') || null,
+          price: p.price
+            ? `₹${p.price.toLocaleString('en-IN')}`
+            : p.rent
+            ? `₹${p.rent.toLocaleString('en-IN')}/mo`
+            : null,
+          link: `/properties/${p.id}`,
+        })),
+    [properties],
+  )
+
   return (
     <>
+      <SEO
+        title="Properties in Hosur | SuperHosur"
+        description="Browse verified real estate properties, commercial spaces, and industrial plots in Hosur. Direct owner listings for sale, rent, and lease."
+        canonicalPath="/properties"
+      />
       <Header />
 
       <section className="page-section hero-section" aria-labelledby="properties-title">
@@ -491,31 +523,14 @@ export function PropertiesPage() {
             </div>
 
             {viewMode === 'map' ? (
-              <HosurMap
-                markers={properties
-                  .filter(
-                    (p): p is typeof p & { latitude: number; longitude: number } =>
-                      typeof p.latitude === 'number' && typeof p.longitude === 'number',
-                  )
-                  .map((p) => ({
-                    id: p.id,
-                    title: p.title,
-                    type: 'property',
-                    latitude: p.latitude,
-                    longitude: p.longitude,
-                    subtitle: `${p.property_type.toUpperCase()} • ${p.listing_type.toUpperCase()}`,
-                    address: [p.address, p.cities?.name].filter(Boolean).join(', ') || null,
-                    price: p.price
-                      ? `₹${p.price.toLocaleString('en-IN')}`
-                      : p.rent
-                      ? `₹${p.rent.toLocaleString('en-IN')}/mo`
-                      : null,
-                    link: `/properties/${p.id}`,
-                  }))}
-                height="520px"
-                title="Verified Real Estate & Properties Map"
-                emptyMessage="No properties currently have GPS coordinates mapped in this view. Explore Hosur regional map above."
-              />
+              <Suspense fallback={<LoadingState message="Loading interactive property map…" />}>
+                <HosurMap
+                  markers={propertyMapMarkers}
+                  height="520px"
+                  title="Verified Real Estate & Properties Map"
+                  emptyMessage="No properties currently have GPS coordinates mapped in this view. Explore Hosur regional map above."
+                />
+              </Suspense>
             ) : (
               <div className="business-grid">
                 {properties.map((property) => (

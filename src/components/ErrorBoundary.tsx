@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { errorReporting } from '../services/errorReporting'
 
 export type ErrorBoundaryProps = {
   children: ReactNode
@@ -8,6 +9,7 @@ export type ErrorBoundaryProps = {
 export type ErrorBoundaryState = {
   hasError: boolean
   error: Error | null
+  correlationId: string | null
 }
 
 export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
@@ -16,10 +18,11 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
     this.state = {
       hasError: false,
       error: null,
+      correlationId: null,
     }
   }
 
-  static getDerivedStateFromError(error: Error): ErrorBoundaryState {
+  static getDerivedStateFromError(error: Error): Partial<ErrorBoundaryState> {
     return {
       hasError: true,
       error,
@@ -27,13 +30,19 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   }
 
   override componentDidCatch(error: Error, errorInfo: ErrorInfo): void {
-    console.error('SuperHosur ErrorBoundary caught an unhandled rendering error:', error, errorInfo)
+    const correlationId = errorReporting.captureException(error, {
+      severity: 'fatal',
+      component: 'ReactErrorBoundary',
+      metadata: { componentStack: errorInfo.componentStack },
+    })
+    this.setState({ correlationId })
   }
 
   handleReset = (): void => {
     this.setState({
       hasError: false,
       error: null,
+      correlationId: null,
     })
   }
 
@@ -46,10 +55,6 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
       if (this.props.fallback) {
         return this.props.fallback
       }
-
-      const errorMessage =
-        this.state.error?.message ||
-        'An unexpected rendering error occurred. You can reload the page or return to the marketplace.'
 
       return (
         <div className="app-shell error-boundary-shell">
@@ -77,12 +82,14 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
               </p>
               <h2>Something went wrong</h2>
               <p className="error-lead">
-                An unexpected error occurred while displaying this page in SuperHosur.
+                An unexpected error occurred while displaying this page in SuperHosur. Your session and listings remain safe.
               </p>
 
-              <div className="error-detail-box">
-                <code>{errorMessage}</code>
-              </div>
+              {this.state.correlationId && (
+                <div style={{ marginTop: '12px', fontSize: '0.8rem', color: '#64748b' }}>
+                  Reference ID: <code style={{ userSelect: 'all', color: '#0f172a' }}>{this.state.correlationId}</code>
+                </div>
+              )}
 
               <div className="error-actions-row">
                 <button

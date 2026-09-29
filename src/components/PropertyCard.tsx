@@ -1,3 +1,4 @@
+import { memo } from 'react'
 import { Link } from 'react-router-dom'
 import type { PropertySummary } from '../services/properties'
 import { SaveListingButton } from './SaveListingButton'
@@ -22,7 +23,7 @@ function formatPropertyType(type: string): string {
   return type.charAt(0).toUpperCase() + type.slice(1)
 }
 
-export function PropertyCard({ property }: PropertyCardProps) {
+export const PropertyCard = memo(function PropertyCard({ property }: PropertyCardProps) {
   const listingBadge = formatListingType(property.listing_type)
   const typeBadge = formatPropertyType(property.property_type)
 
@@ -38,7 +39,7 @@ export function PropertyCard({ property }: PropertyCardProps) {
       <article className="business-card" aria-label={property.title}>
         <div className="business-card__media">
           {property.cover_photo_url ? (
-            <img src={property.cover_photo_url} alt={property.title} />
+            <img src={property.cover_photo_url} alt={property.title} loading="lazy" />
           ) : (
             <div className="business-card__placeholder" aria-hidden="true">Property listing</div>
           )}
@@ -79,4 +80,4 @@ export function PropertyCard({ property }: PropertyCardProps) {
       </article>
     </Link>
   )
-}
+})

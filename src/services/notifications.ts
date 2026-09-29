@@ -8,6 +8,8 @@ export type NotificationType =
   | 'requirement_status'
   | 'new_lead'
   | 'system'
+  | 'quote_message'
+  | 'direct_message'
 
 export type NotificationRecord = {
   id: string
@@ -109,6 +111,9 @@ export async function getUnreadNotifications(limit = 30): Promise<NotificationRe
   }))
 }
 
+let pendingUnreadCountPromise: Promise<number> | null = null
+let pendingCountUserId: string | null = null
+
 export async function getUnreadNotificationCount(): Promise<number> {
   const supabase = getSupabaseClient()
   const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
@@ -119,17 +124,31 @@ export async function getUnreadNotificationCount(): Promise<number> {
 
   const userId = sessionData.session.user.id
 
-  const { count, error } = await supabase
-    .from('notifications')
-    .select('*', { count: 'exact', head: true })
-    .eq('user_id', userId)
-    .eq('is_read', false)
-
-  if (error) {
-    return 0
+  if (pendingUnreadCountPromise && pendingCountUserId === userId) {
+    return pendingUnreadCountPromise
   }
 
-  return count ?? 0
+  pendingCountUserId = userId
+
+  pendingUnreadCountPromise = (async () => {
+    try {
+      const { count, error } = await supabase
+        .from('notifications')
+        .select('*', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('is_read', false)
+
+      if (error) {
+        return 0
+      }
+
+      return count ?? 0
+    } finally {
+      pendingUnreadCountPromise = null
+    }
+  })()
+
+  return pendingUnreadCountPromise
 }
 
 export async function markNotificationAsRead(notificationId: string): Promise<void> {
@@ -266,11 +285,33 @@ export async function clearAllNotifications(): Promise<void> {
   }
 }
 
+type UserSubscription = {
+  channel: ReturnType<ReturnType<typeof getSupabaseClient>['channel']>
+  listeners: Set<(notification: NotificationRecord) => void>
+}
+
+const activeUserSubscriptions = new Map<string, UserSubscription>()
+
 export function subscribeToUserNotifications(
   userId: string,
   onInsert: (notification: NotificationRecord) => void,
 ): () => void {
+  const existing = activeUserSubscriptions.get(userId)
+  if (existing) {
+    existing.listeners.add(onInsert)
+    return () => {
+      existing.listeners.delete(onInsert)
+      if (existing.listeners.size === 0) {
+        const supabase = getSupabaseClient()
+        void supabase.removeChannel(existing.channel)
+        activeUserSubscriptions.delete(userId)
+      }
+    }
+  }
+
   const supabase = getSupabaseClient()
+  const listeners = new Set<(notification: NotificationRecord) => void>([onInsert])
+
   const channel = supabase
     .channel(`notifications-${userId}`)
     .on(
@@ -296,7 +337,13 @@ export function subscribeToUserNotifications(
           created_at: String(n.created_at ?? new Date().toISOString()),
           updated_at: String(n.updated_at ?? new Date().toISOString()),
         }
-        onInsert(formatted)
+        for (const listener of listeners) {
+          try {
+            listener(formatted)
+          } catch (err) {
+            console.error('Error dispatching notification to listener:', err)
+          }
+        }
       },
     )
     .subscribe((_status, err) => {
@@ -305,7 +352,13 @@ export function subscribeToUserNotifications(
       }
     })
 
+  activeUserSubscriptions.set(userId, { channel, listeners })
+
   return () => {
-    void supabase.removeChannel(channel)
+    listeners.delete(onInsert)
+    if (listeners.size === 0) {
+      void supabase.removeChannel(channel)
+      activeUserSubscriptions.delete(userId)
+    }
   }
 }

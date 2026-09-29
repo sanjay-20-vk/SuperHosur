@@ -47,9 +47,20 @@ export function getSavedErrorMessage(error: unknown, fallback = 'Unable to updat
   return fallback
 }
 
+let cachedSavedIds: { businessIds: Set<string>; propertyIds: Set<string> } | null = null
+let pendingSavedIdsPromise: Promise<{ businessIds: Set<string>; propertyIds: Set<string> }> | null = null
+let cachedUserId: string | null = null
+
+export function invalidateSavedListingsCache(): void {
+  cachedSavedIds = null
+  pendingSavedIdsPromise = null
+  cachedUserId = null
+}
+
 /**
  * Returns a lightweight set of IDs saved by the current user.
  * Enables O(1) checks for listing cards without making repeated queries.
+ * In-flight requests are automatically deduplicated into a single Supabase query.
  */
 export async function getSavedListingIds(): Promise<{ businessIds: Set<string>; propertyIds: Set<string> }> {
   const supabase = getSupabaseClient()
@@ -57,79 +68,65 @@ export async function getSavedListingIds(): Promise<{ businessIds: Set<string>; 
   const userId = sessionData.session?.user.id
 
   if (!userId) {
+    invalidateSavedListingsCache()
     return { businessIds: new Set(), propertyIds: new Set() }
   }
 
-  const { data, error } = await supabase
-    .from('saved_listings')
-    .select('business_id, property_id')
-    .eq('user_id', userId)
-
-  if (error || !data) {
-    return { businessIds: new Set(), propertyIds: new Set() }
+  if (cachedUserId === userId && cachedSavedIds) {
+    return cachedSavedIds
   }
 
-  const businessIds = new Set<string>()
-  const propertyIds = new Set<string>()
-
-  for (const row of data) {
-    if (row.business_id) businessIds.add(row.business_id)
-    if (row.property_id) propertyIds.add(row.property_id)
+  if (cachedUserId === userId && pendingSavedIdsPromise) {
+    return pendingSavedIdsPromise
   }
 
-  return { businessIds, propertyIds }
+  cachedUserId = userId
+
+  pendingSavedIdsPromise = (async () => {
+    try {
+      const { data, error } = await supabase
+        .from('saved_listings')
+        .select('business_id, property_id')
+        .eq('user_id', userId)
+
+      if (error || !data) {
+        return { businessIds: new Set(), propertyIds: new Set() }
+      }
+
+      const businessIds = new Set<string>()
+      const propertyIds = new Set<string>()
+
+      for (const row of data) {
+        if (row.business_id) businessIds.add(row.business_id)
+        if (row.property_id) propertyIds.add(row.property_id)
+      }
+
+      cachedSavedIds = { businessIds, propertyIds }
+      return cachedSavedIds
+    } finally {
+      pendingSavedIdsPromise = null
+    }
+  })()
+
+  return pendingSavedIdsPromise
 }
 
 /**
  * Checks if a specific business is saved by the current user.
+ * Utilizes the cached/deduplicated ID set to prevent N+1 queries.
  */
 export async function isBusinessSaved(businessId: string): Promise<boolean> {
-  const supabase = getSupabaseClient()
-  const { data: sessionData } = await supabase.auth.getSession()
-  const userId = sessionData.session?.user.id
-
-  if (!userId) {
-    return false
-  }
-
-  const { data, error } = await supabase
-    .from('saved_listings')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('business_id', businessId)
-    .maybeSingle()
-
-  if (error) {
-    return false
-  }
-
-  return Boolean(data)
+  const { businessIds } = await getSavedListingIds()
+  return businessIds.has(businessId)
 }
 
 /**
  * Checks if a specific property is saved by the current user.
+ * Utilizes the cached/deduplicated ID set to prevent N+1 queries.
  */
 export async function isPropertySaved(propertyId: string): Promise<boolean> {
-  const supabase = getSupabaseClient()
-  const { data: sessionData } = await supabase.auth.getSession()
-  const userId = sessionData.session?.user.id
-
-  if (!userId) {
-    return false
-  }
-
-  const { data, error } = await supabase
-    .from('saved_listings')
-    .select('id')
-    .eq('user_id', userId)
-    .eq('property_id', propertyId)
-    .maybeSingle()
-
-  if (error) {
-    return false
-  }
-
-  return Boolean(data)
+  const { propertyIds } = await getSavedListingIds()
+  return propertyIds.has(propertyId)
 }
 
 /**
@@ -164,12 +161,14 @@ export async function saveBusiness(businessId: string): Promise<SavedListingReco
         .single()
 
       if (existing) {
+        cachedSavedIds?.businessIds.add(businessId)
         return existing as SavedListingRecord
       }
     }
     throw error
   }
 
+  cachedSavedIds?.businessIds.add(businessId)
   return data as SavedListingRecord
 }
 
@@ -194,6 +193,8 @@ export async function unsaveBusiness(businessId: string): Promise<void> {
   if (error) {
     throw error
   }
+
+  cachedSavedIds?.businessIds.delete(businessId)
 }
 
 /**
@@ -228,12 +229,14 @@ export async function saveProperty(propertyId: string): Promise<SavedListingReco
         .single()
 
       if (existing) {
+        cachedSavedIds?.propertyIds.add(propertyId)
         return existing as SavedListingRecord
       }
     }
     throw error
   }
 
+  cachedSavedIds?.propertyIds.add(propertyId)
   return data as SavedListingRecord
 }
 
@@ -258,6 +261,8 @@ export async function unsaveProperty(propertyId: string): Promise<void> {
   if (error) {
     throw error
   }
+
+  cachedSavedIds?.propertyIds.delete(propertyId)
 }
 
 /**
@@ -281,6 +286,8 @@ export async function removeSavedListing(savedId: string): Promise<void> {
   if (error) {
     throw error
   }
+
+  invalidateSavedListingsCache()
 }
 
 /**

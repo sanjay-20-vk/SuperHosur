@@ -30,10 +30,20 @@ export default tseslint.config(
     },
   },
   {
-    files: ['scripts/**/*.mjs'],
+    files: ['scripts/**/*.{mjs,ts}'],
     languageOptions: {
       ecmaVersion: 2023,
       globals: globals.node,
+    },
+  },
+  {
+    files: ['public/sw.js'],
+    languageOptions: {
+      ecmaVersion: 2023,
+      globals: {
+        ...globals.serviceworker,
+        console: 'readonly',
+      },
     },
   },
 )
